@@ -1,128 +1,106 @@
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
+from datetime import datetime
 
-# Configuración de la página para que use toda la pantalla
-st.set_page_config(page_title="App Observatorio", page_icon="🚓", layout="wide")
+# Configuración de la página
+st.set_page_config(page_title="Observatorio de Seguridad", layout="wide")
 
-# 1. Conexión a la base de datos
+# 1. Conexión a la base de datos (Usando Secrets de Streamlit)
 @st.cache_resource
 def iniciar_conexion():
-    # Usamos la clave guardada en los "Secrets" de Streamlit
-    uri = st.secrets["mongo"]["uri"]
-    return MongoClient(uri)
+    try:
+        # Busca la URI en los Secrets que configuramos en Streamlit
+        uri = st.secrets["mongo"]["uri"]
+        return MongoClient(uri)
+    except Exception as e:
+        st.error(f"Error de configuración: {e}")
+        return None
 
-cliente = iniciar_conexion()
-db = cliente['observatorio_seguridad']
+client = iniciar_conexion()
+db = client['observatorio_seguridad']
 coleccion = db['registro_delitos']
 
-st.title("🚓 Sistema Central - Observatorio de Seguridad")
+# Interfaz de Streamlit
+st.title("🛡️ Sistema Central - Observatorio de Seguridad")
 
-# 2. CREAMOS LAS PESTAÑAS (TABS)
-tab_ingreso, tab_analitica = st.tabs(["📝 Ingreso de Datos", "📊 Analítica y Reportes"])
+# Crear pestañas
+tab1, tab2 = st.tabs(["📝 Ingreso de Datos", "📊 Analítica y Reportes"])
 
-# ==========================================
-# PESTAÑA 1: INGRESO DE DATOS (Lo que ya tenías)
-# ==========================================
-with tab_ingreso:
-    st.write("Completa el formulario para ingresar un nuevo registro a la base de datos.")
+with tab1:
+    st.header("Registrar Nuevo Incidente")
+    with st.form("formulario_registro"):
+        fecha = st.date_input("Fecha del Suceso", datetime.now())
+        direccion = st.text_input("Dirección / Ubicación")
+        tipo_delito = st.selectbox("Tipo de Delito", 
+                                  ["Robo", "Hurto", "Vandalismo", "Asalto", "Otro"])
+        es_relevante = st.checkbox("¿Es un caso relevante?")
+        detalles = st.text_area("Detalles adicionales")
+        
+        boton_guardar = st.form_submit_button("Guardar Registro")
+        
+        if boton_guardar:
+            nuevo_registro = {
+                "fecha": datetime.combine(fecha, datetime.min.time()),
+                "direccion": direccion,
+                "tipo_delito": tipo_delito,
+                "es_relevante": es_relevante,
+                "detalles": detalles,
+                "fecha_registro": datetime.now()
+            }
+            coleccion.insert_one(nuevo_registro)
+            st.success("✅ Registro guardado exitosamente en la nube.")
+
+with tab2:
+    st.header("Panel de Visualización")
     
-    with st.form("formulario_ingreso", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            fecha_input = st.date_input("Fecha del Delito")
-            direccion_input = st.text_input("Dirección (Ej. Alameda Oriente 9585)")
-            tipo_delito = st.selectbox("Tipo de Delito", ["RLH", "RCV", "RCI", "RLHF", "Otro"])
-            
-        with col2:
-            st.write("Evidencia y Relevancia")
-            tiene_imagenes = st.checkbox("¿Se recopilaron Imágenes?")
-            tiene_videos = st.checkbox("¿Se recopilaron Videos?")
-            es_relevante = st.checkbox("¿Es un caso Relevante para seguimiento?")
-            
-        submit_button = st.form_submit_button("Guardar Registro")
-        
-        if submit_button:
-            if direccion_input == "":
-                st.warning("⚠️ Por favor, ingresa una dirección válida.")
-            else:
-                nuevo_documento = {
-                    "fecha": fecha_input.strftime("%d/%m/%Y"), 
-                    "direccion": direccion_input,
-                    "tipo_delito": tipo_delito,
-                    "evidencia": {
-                        "tiene_imagenes": tiene_imagenes,
-                        "tiene_videos": tiene_videos
-                    },
-                    "es_relevante": es_relevante
-                }
-                coleccion.insert_one(nuevo_documento)
-                st.success(f"✅ Registro en {direccion_input} guardado correctamente.")
-
-# ==========================================
-# PESTAÑA 2: ANALÍTICA DELICTUAL (¡Lo Nuevo!)
-# ==========================================
-with tab_analitica:
-    st.header("Panel de Análisis de Datos")
+    # Cargar datos desde MongoDB
+    datos = list(coleccion.find())
     
-    # Extraemos todos los datos de MongoDB y los convertimos en un formato analítico
-    datos_crudos = list(coleccion.find())
-    
-    if len(datos_crudos) > 0:
-        # Convertimos la lista de diccionarios en un DataFrame de Pandas
-        df = pd.DataFrame(datos_crudos)
-        # 1. Traer los datos de MongoDB
-datos = list(coleccion.find())
-df = pd.DataFrame(datos)
+    if datos:
+        df = pd.DataFrame(datos)
+        
+        # --- PROCESO DE UNIFICACIÓN DE COLUMNAS (EXCEL + NUEVOS) ---
+        # Si existen columnas del Excel (Mayúsculas), las movemos a las nuevas (minúsculas)
+        mapeo = {
+            'Fecha': 'fecha',
+            'Dirección': 'direccion',
+            'Tipo de delito': 'tipo_delito',
+            'Relevante': 'es_relevante'
+        }
+        
+        for col_vieja, col_nueva in mapeo.items():
+            if col_vieja in df.columns:
+                if col_nueva not in df.columns:
+                    df[col_nueva] = None
+                # Rellenamos los vacíos de la columna nueva con los datos de la vieja
+                df[col_nueva] = df[col_nueva].fillna(df[col_vieja])
+        
+        # Ajuste especial para la columna de Relevancia (Si/No a Verdadero/Falso)
+        if 'Relevante' in df.columns:
+            mask = df['Relevante'].isin(['Si', 'SI', 'si'])
+            df.loc[mask, 'es_relevante'] = True
+            df.loc[~mask & df['Relevante'].notna(), 'es_relevante'] = False
 
-# 2. UNIFICAR COLUMNAS (Añade estas líneas)
-if not df.empty:
-    # Fusionamos 'Fecha' con 'fecha', 'Dirección' con 'direccion', etc.
-    if 'Fecha' in df.columns:
-        df['fecha'] = df['fecha'].fillna(df['Fecha'])
-    if 'Dirección' in df.columns:
-        df['direccion'] = df['direccion'].fillna(df['Dirección'])
-    if 'Tipo de delito' in df.columns:
-        df['tipo_delito'] = df['tipo_delito'].fillna(df['Tipo de delito'])
-    if 'Relevante' in df.columns:
-        # Convertimos "Si" a True para que los gráficos lo entiendan
-        df['es_relevante'] = df['es_relevante'].fillna(df['Relevante'].map({'Si': True, 'No': False}))
+        # Eliminar el ID de MongoDB para la vista de usuario y columnas viejas
+        columnas_finales = ['fecha', 'direccion', 'tipo_delito', 'es_relevante', 'detalles']
+        df_display = df[[c for c in columnas_finales if c in df.columns]].copy()
+        
+        # Métricas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total de Casos", len(df))
+        
+        relevantes = df['es_relevante'].sum() if 'es_relevante' in df.columns else 0
+        col2.metric("Casos Relevantes", int(relevantes))
+        col3.metric("Última Actualización", datetime.now().strftime("%H:%M"))
 
-    # Limpiamos las columnas viejas que ya no necesitamos
-    columnas_a_borrar = ['Fecha', 'Dirección', 'Tipo de delito', 'Relevante', 'Imágenes', 'Videos']
-    df = df.drop(columns=[col for col in columnas_a_borrar if col in df.columns])
+        # Gráfico simple
+        st.subheader("Distribución por Tipo de Delito")
+        if 'tipo_delito' in df.columns:
+            st.bar_chart(df['tipo_delito'].value_counts())
 
-        # 1. TARJETAS DE RESUMEN (Métricas rápidas)
-        st.subheader("Métricas Generales")
-        col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("Total de Registros", len(df))
-        col_m2.metric("Casos Relevantes", len(df[df['es_relevante'] == True]))
-        # Contamos cuántos delitos diferentes hay en el registro
-        col_m3.metric("Tipos de Delitos Distintos", df['tipo_delito'].nunique())
-        
-        st.divider() # Línea separadora
-        
-        # 2. GRÁFICOS ANALÍTICOS
-        col_g1, col_g2 = st.columns(2)
-        
-        with col_g1:
-            st.write("**Frecuencia por Tipo de Delito**")
-            # Agrupamos por delito y contamos cuántos hay de cada uno
-            conteo_delitos = df['tipo_delito'].value_counts()
-            # Streamlit hace el gráfico de barras automáticamente
-            st.bar_chart(conteo_delitos)
-            
-        with col_g2:
-            st.write("**Direcciones con más reiteraciones (Top 5)**")
-            # Buscamos direcciones repetidas (posibles blancos recurrentes)
-            top_direcciones = df['direccion'].value_counts().head(5)
-            st.bar_chart(top_direcciones, color="#ff4b4b")
-            
-        # 3. TABLA DE DATOS FILTRABLE
-        st.subheader("Base de Datos Completa")
-        # Mostramos una tabla interactiva, ocultando el ID técnico de MongoDB
-        st.dataframe(df.drop(columns=['_id', 'evidencia']), use_container_width=True)
-        
+        # Tabla de datos limpia
+        st.subheader("Listado de Registros")
+        st.dataframe(df_display, use_container_width=True)
     else:
-        st.info("No hay datos suficientes para mostrar analítica. Ingresa algunos registros primero.")
+        st.info("Aún no hay datos registrados en la base de datos de la nube.")
