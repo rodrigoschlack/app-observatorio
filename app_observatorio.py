@@ -36,7 +36,7 @@ with tab1:
         db = client['observatorio_seguridad']
         coleccion = db['registro_delitos']
         
-        # Sincronizar lista de delitos (buscando en todas las variantes de columnas)
+        # Sincronizar lista de delitos
         docs = list(coleccion.find({}, {"tipo_delito": 1, "Tipo de delito": 1, "Delito": 1, "_id": 0}))
         delitos_db = set()
         for d in docs:
@@ -55,9 +55,9 @@ with tab1:
             t_otro = st.text_input("Si eligió 'Otro', escriba aquí:")
             
             c1, c2, c3 = st.columns(3)
-            with c1: img = st.checkbox("¿Imágenes?")
-            with c2: vid = st.checkbox("¿Videos?")
-            with c3: rel = st.checkbox("¿Relevante?")
+            with c1: tiene_img = st.checkbox("¿Imágenes?")
+            with c2: tiene_vid = st.checkbox("¿Videos?")
+            with c3: es_rel = st.checkbox("¿Relevante?")
                 
             det = st.text_area("Detalles")
             if st.form_submit_button("Guardar Registro"):
@@ -66,16 +66,16 @@ with tab1:
                     "fecha": datetime.combine(fecha_in, datetime.min.time()),
                     "direccion": dir_in,
                     "tipo_delito": t_fin,
-                    "tiene_imagenes": img,
-                    "tiene_videos": vid,
-                    "es_relevante": rel,
+                    "tiene_imagenes": tiene_img,
+                    "tiene_videos": tiene_vid,
+                    "es_relevante": es_rel,
                     "detalles": det,
                     "fecha_registro": datetime.now()
                 })
                 st.success("✅ Guardado")
                 st.rerun()
 
-# --- TAB 2: ANALÍTICA (FUSIÓN TOTAL DE COLUMNAS) ---
+# --- TAB 2: ANALÍTICA Y TABLA DETALLADA ---
 with tab2:
     st.header("Panel de Análisis de Datos")
     if client:
@@ -87,63 +87,55 @@ with tab2:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # --- PASO CRUCIAL: FUSIÓN DE COLUMNAS (Mapeo de Compass/Excel a App) ---
-                # Definimos qué columnas significan lo mismo
-                mapa_fechas = ['fecha', 'Fecha']
-                mapa_direcciones = ['direccion', 'Dirección', 'Ubicación']
-                mapa_delitos = ['tipo_delito', 'Tipo de delito', 'Delito']
+                # --- FUSIÓN DE COLUMNAS ---
+                # Mapeamos columnas de Excel/Compass a las nuevas de la App
+                mapeos = {
+                    'fecha_final': ['fecha', 'Fecha'],
+                    'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
+                    'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
+                    'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
+                    'vid_final': ['tiene_videos', 'Videos', 'Video']
+                }
 
-                # Creamos las columnas definitivas si no existen
-                for col in ['fecha_final', 'direccion_final', 'delito_final']:
-                    df[col] = None
+                for final, originales in mapeos.items():
+                    df[final] = None
+                    for orig in originales:
+                        if orig in df.columns:
+                            df[final] = df[final].fillna(df[orig])
 
-                # Llenamos las definitivas recorriendo las opciones posibles
-                for f in mapa_fechas:
-                    if f in df.columns: df['fecha_final'] = df['fecha_final'].fillna(df[f])
-                
-                for d in mapa_direcciones:
-                    if d in df.columns: df['direccion_final'] = df['direccion_final'].fillna(df[d])
-                
-                for t in mapa_delitos:
-                    if t in df.columns: df['delito_final'] = df['delito_final'].fillna(df[t])
-
-                # --- LIMPIEZA Y ORDEN ---
-                # Forzamos conversión de fecha (día primero)
+                # --- LIMPIEZA ---
                 df['fecha_final'] = pd.to_datetime(df['fecha_final'], dayfirst=True, errors='coerce')
-                
-                # Eliminamos las filas que realmente no tienen nada (basura real)
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
-                
-                # Ordenar: 2026 arriba
                 df = df.sort_values(by='fecha_final', ascending=False)
 
+                # Convertir a texto para la tabla (✅/❌)
+                for col in ['img_final', 'vid_final']:
+                    # Convertimos Sí/No o True/False a iconos
+                    df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
+
                 # Buscador
-                busq = st.text_input("🔍 Buscar dirección:", key="search_final")
+                busq = st.text_input("🔍 Buscar dirección:", key="search_v5")
                 if busq:
                     df = df[df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)]
 
-                # Métricas
-                m1, m2 = st.columns(2)
-                m1.metric("Total Registros", len(df))
-                if not df.empty:
-                    m2.metric("Último Reporte", df['fecha_final'].iloc[0].strftime('%d-%m-%Y'))
-
                 # Gráfico
-                st.subheader("Estadísticas por Delito")
+                st.subheader("Estadísticas")
                 cnt = df['delito_final'].value_counts().reset_index()
                 cnt.columns = ['Delito', 'Cant']
                 fig = px.bar(cnt, x='Cant', y='Delito', orientation='h', text='Cant', color='Delito')
-                fig.update_layout(showlegend=False, height=400)
+                fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # TABLA FINAL (SIN NONES)
-                st.subheader("Base de Datos Unificada")
-                df_v = df[['fecha_final', 'direccion_final', 'delito_final']].copy()
-                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito'] # Renombramos para la vista
+                # --- TABLA FINAL CON TODAS LAS CASILLAS ---
+                st.subheader("Listado de Registros Detallado")
+                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final']].copy()
+                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?']
+                
+                # Formatear fecha para Chile
                 df_v['Fecha'] = df_v['Fecha'].dt.strftime('%d-%m-%Y')
                 
                 st.dataframe(df_v, use_container_width=True, hide_index=True)
             else:
-                st.info("Sin datos.")
+                st.info("Sin datos registrados.")
         except Exception as e:
-            st.error(f"Error en el procesamiento: {e}")
+            st.error(f"Error al procesar la tabla: {e}")
