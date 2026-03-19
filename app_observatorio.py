@@ -72,7 +72,28 @@ with tab_analitica:
     if len(datos_crudos) > 0:
         # Convertimos la lista de diccionarios en un DataFrame de Pandas
         df = pd.DataFrame(datos_crudos)
-        
+        # 1. Traer los datos de MongoDB
+datos = list(coleccion.find())
+df = pd.DataFrame(datos)
+
+# 2. UNIFICAR COLUMNAS (Añade estas líneas)
+if not df.empty:
+    # Fusionamos 'Fecha' con 'fecha', 'Dirección' con 'direccion', etc.
+    if 'Fecha' in df.columns:
+        df['fecha'] = df['fecha'].fillna(df['Fecha'])
+    if 'Dirección' in df.columns:
+        df['direccion'] = df['direccion'].fillna(df['Dirección'])
+    if 'Tipo de delito' in df.columns:
+        df['tipo_delito'] = df['tipo_delito'].fillna(df['Tipo de delito'])
+    if 'Relevante' in df.columns:
+        # Convertimos "Si" a True para que los gráficos lo entiendan
+        df['es_relevante'] = df['es_relevante'].fillna(df['Relevante'].map({'Si': True, 'No': False}))
+
+    # Limpiamos las columnas viejas que ya no necesitamos
+    columnas_a_borrar = ['Fecha', 'Dirección', 'Tipo de delito', 'Relevante', 'Imágenes', 'Videos']
+    df = df.drop(columns=[col for col in columnas_a_borrar if col in df.columns])
+
+
         # 1. TARJETAS DE RESUMEN (Métricas rápidas)
         st.subheader("Métricas Generales")
         col_m1, col_m2, col_m3 = st.columns(3)
