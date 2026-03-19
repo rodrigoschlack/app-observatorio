@@ -93,7 +93,6 @@ if not df.empty:
     columnas_a_borrar = ['Fecha', 'Dirección', 'Tipo de delito', 'Relevante', 'Imágenes', 'Videos']
     df = df.drop(columns=[col for col in columnas_a_borrar if col in df.columns])
 
-
         # 1. TARJETAS DE RESUMEN (Métricas rápidas)
         st.subheader("Métricas Generales")
         col_m1, col_m2, col_m3 = st.columns(3)
