@@ -8,8 +8,9 @@ st.set_page_config(page_title="App Observatorio", page_icon="🚓", layout="wide
 # 1. Conexión a la base de datos
 @st.cache_resource
 def iniciar_conexion():
-    # REEMPLAZA ESTO CON TU DIRECCIÓN REAL DE MONGODB ATLAS
-    return MongoClient('mongodb://localhost:27017/')
+    # Usamos la clave guardada en los "Secrets" de Streamlit
+    uri = st.secrets["mongo"]["uri"]
+    return MongoClient(uri)
 
 cliente = iniciar_conexion()
 db = cliente['observatorio_seguridad']
