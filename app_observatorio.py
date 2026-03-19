@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime
+import plotly.express as px  # Librería para gráficos profesionales
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio de Seguridad", layout="wide", page_icon="🛡️")
@@ -28,7 +29,7 @@ st.markdown("---")
 
 tab1, tab2 = st.tabs(["📝 Ingreso de Datos", "📊 Analítica y Reportes"])
 
-# --- TAB 1: FORMULARIO DE INGRESO (CON TODAS LAS CASILLAS) ---
+# --- TAB 1: FORMULARIO DE INGRESO ---
 with tab1:
     st.header("Registrar Nuevo Incidente")
     with st.form("formulario_registro", clear_on_submit=True):
@@ -40,14 +41,11 @@ with tab1:
             
         tipo_delito = st.selectbox("Tipo de Delito", ["RLH", "Robo", "Hurto", "Vandalismo", "Asalto", "Otro"])
         
-        # Nuevas casillas solicitadas
+        # Casillas de verificación solicitadas
         col_c1, col_c2, col_c3 = st.columns(3)
-        with col_c1:
-            tiene_imagenes = st.checkbox("¿Se recopilaron Imágenes?")
-        with col_c2:
-            tiene_videos = st.checkbox("¿Se recopilaron Videos?")
-        with col_c3:
-            es_relevante = st.checkbox("¿Es un caso relevante?")
+        with col_c1: tiene_imagenes = st.checkbox("¿Se recopilaron Imágenes?")
+        with col_c2: tiene_videos = st.checkbox("¿Se recopilaron Videos?")
+        with col_c3: es_relevante = st.checkbox("¿Es un caso relevante?")
             
         detalles = st.text_area("Detalles del caso")
         
@@ -68,11 +66,11 @@ with tab1:
                     "fecha_registro": datetime.now()
                 }
                 coleccion.insert_one(nuevo)
-                st.success(f"✅ Registro en {direccion_input} guardado correctamente.")
+                st.success(f"✅ Registro guardado correctamente.")
             else:
                 st.error("No hay conexión con la base de datos.")
 
-# --- TAB 2: ANALÍTICA Y REPORTES ---
+# --- TAB 2: ANALÍTICA Y REPORTES (MEJORADA PARA MÓVIL) ---
 with tab2:
     st.header("Panel de Análisis de Datos")
     
@@ -85,71 +83,74 @@ with tab2:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # --- UNIFICACIÓN DE COLUMNAS (Mapeo de Excel a Formulario) ---
+                # Unificación de columnas Excel + Formulario
                 mapeo = {
-                    'Fecha': 'fecha', 
-                    'Dirección': 'direccion', 
-                    'Tipo de delito': 'tipo_delito', 
-                    'Relevante': 'es_relevante',
-                    'Imágenes': 'tiene_imagenes',
-                    'Videos': 'tiene_videos'
+                    'Fecha': 'fecha', 'Dirección': 'direccion', 
+                    'Tipo de delito': 'tipo_delito', 'Relevante': 'es_relevante',
+                    'Imágenes': 'tiene_imagenes', 'Videos': 'tiene_videos'
                 }
+                for cv, cn in mapeo.items():
+                    if cv in df.columns:
+                        if cn not in df.columns: df[cn] = None
+                        df[cn] = df[cn].fillna(df[cv])
                 
-                for col_vieja, col_nueva in mapeo.items():
-                    if col_vieja in df.columns:
-                        if col_nueva not in df.columns: df[col_nueva] = None
-                        df[col_nueva] = df[col_nueva].fillna(df[col_vieja])
-                
-                # --- LIMPIEZA DE DATOS ---
-                # Convertir "Si"/"No" del Excel a Verdadero/Falso para que la tabla sea uniforme
-                cols_bool = ['es_relevante', 'tiene_imagenes', 'tiene_videos']
-                for col in cols_bool:
-                    if col in df.columns:
-                        df[col] = df[col].astype(str).str.lower().isin(['true', 'si', '1', 'yes'])
+                # Limpieza de valores Sí/No a Booleanos
+                for c in ['es_relevante', 'tiene_imagenes', 'tiene_videos']:
+                    if c in df.columns:
+                        df[c] = df[c].astype(str).str.lower().isin(['true', 'si', '1', 'yes'])
 
-                # Ordenar por fecha (2026 primero)
+                # Orden cronológico (2026 arriba)
                 df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
                 df = df.sort_values(by='fecha', ascending=False)
                 
-                # Buscador
-                st.subheader("🔍 Buscador de Direcciones")
-                busqueda = st.text_input("Filtrar por calle:", placeholder="Ej: Tegualda...")
+                # Buscador de Direcciones
+                busqueda = st.text_input("🔍 Buscar dirección:", placeholder="Ej: Tegualda...")
                 if busqueda:
                     df = df[df['direccion'].astype(str).str.contains(busqueda, case=False, na=False)]
 
-                # Métricas
+                # Métricas Rápidas
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Registros", len(df))
                 m2.metric("Casos Relevantes", int(df['es_relevante'].sum()))
                 m3.metric("Con Imágenes", int(df['tiene_imagenes'].sum()))
 
-                # Tabla Final
+                # --- GRÁFICO HORIZONTAL PARA MÓVIL ---
+                st.subheader("Resumen por Tipo de Delito")
+                if 'tipo_delito' in df.columns:
+                    # Contamos los datos
+                    conteo = df['tipo_delito'].value_counts().reset_index()
+                    conteo.columns = ['Delito', 'Cantidad']
+                    
+                    # Creamos el gráfico horizontal con Plotly
+                    fig = px.bar(conteo, 
+                                 x='Cantidad', 
+                                 y='Delito', 
+                                 orientation='h',
+                                 text='Cantidad', # Muestra el número exacto al lado
+                                 color='Delito',
+                                 color_discrete_sequence=px.colors.qualitative.Safe)
+                    
+                    # Ajustes de diseño para que no se mueva en el celular
+                    fig.update_layout(
+                        showlegend=False, 
+                        height=400, 
+                        margin=dict(l=0, r=0, t=10, b=10),
+                        yaxis={'categoryorder':'total ascending'} # El más frecuente arriba
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+                # Tabla de Datos
                 st.subheader("Base de Datos Completa")
-                # Seleccionar y renombrar columnas para que se vean bien
-                cols_mostrar = {
-                    'fecha': 'Fecha',
-                    'direccion': 'Dirección',
-                    'tipo_delito': 'Delito',
-                    'tiene_imagenes': 'Imágenes',
-                    'tiene_videos': 'Videos',
-                    'es_relevante': 'Relevante'
-                }
-                
-                df_ver = df[[c for c in cols_mostrar.keys() if c in df.columns]].copy()
+                df_ver = df[['fecha', 'direccion', 'tipo_delito', 'es_relevante']].copy()
                 df_ver['fecha'] = df_ver['fecha'].dt.strftime('%d-%m-%Y')
                 
-                # Convertir True/False a Si/No solo para la vista visual
-                for c in ['tiene_imagenes', 'tiene_videos', 'es_relevante']:
-                    if c in df_ver.columns:
-                        df_ver[c] = df_ver[c].map({True: '✅ Si', False: '❌ No'})
-
-                st.dataframe(df_ver, use_container_width=True, hide_index=True)
+                # Iconos para que se entienda mejor en pantalla chica
+                for c in ['es_relevante']:
+                    df_ver[c] = df_ver[c].map({True: '✅ Si', False: '❌ No'})
                 
-                # Gráfico
-                st.subheader("Resumen por Tipo de Delito")
-                st.bar_chart(df['tipo_delito'].value_counts())
+                st.dataframe(df_ver, use_container_width=True, hide_index=True)
 
             else:
-                st.info("No hay datos para mostrar.")
+                st.info("Aún no hay datos para mostrar.")
         except Exception as e:
-            st.error(f"Error al cargar analítica: {e}")
+            st.error(f"Error al procesar analítica: {e}")
