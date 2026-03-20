@@ -29,14 +29,14 @@ st.markdown("---")
 
 tab1, tab2 = st.tabs(["📝 Ingreso de Datos", "📊 Analítica y Reportes"])
 
-# --- TAB 1: INGRESO (LISTA ESTRICTA ACTUALIZADA) ---
+# --- TAB 1: INGRESO ---
 with tab1:
     st.header("Registrar Nuevo Incidente")
     if client:
         db = client['observatorio_seguridad']
         coleccion = db['registro_delitos']
         
-        # Lista fija y estricta según lo solicitado
+        # Lista fija y estricta
         opciones = ["RLH", "RCI", "RCV", "RP", "Otros"]
 
         with st.form("formulario_registro", clear_on_submit=True):
@@ -44,10 +44,7 @@ with tab1:
             with col1: fecha_in = st.date_input("Fecha del Suceso", datetime.now())
             with col2: dir_in = st.text_input("Dirección / Ubicación")
             
-            # El menú desplegable ahora usa solo la lista fija
             t_sel = st.selectbox("Tipo de Delito", opciones)
-            
-            # Cuadro de texto para "Otros"
             t_otro = st.text_input("Si eligió 'Otros', escriba el tipo de procedimiento aquí:")
             
             c1, c2, c3 = st.columns(3)
@@ -57,9 +54,7 @@ with tab1:
                 
             det = st.text_area("Detalles")
             if st.form_submit_button("Guardar Registro"):
-                # Lógica: Si elige "Otros", guarda lo que escribió. Si no, guarda la sigla.
                 t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
-                
                 coleccion.insert_one({
                     "fecha": datetime.combine(fecha_in, datetime.min.time()),
                     "direccion": dir_in,
@@ -85,13 +80,14 @@ with tab2:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # --- FUSIÓN DE COLUMNAS ---
+                # --- FUSIÓN DE COLUMNAS (AHORA INCLUYE DETALLES) ---
                 mapeos = {
                     'fecha_final': ['fecha', 'Fecha'],
                     'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
                     'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
                     'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
-                    'vid_final': ['tiene_videos', 'Videos', 'Video']
+                    'vid_final': ['tiene_videos', 'Videos', 'Video'],
+                    'detalles_final': ['detalles', 'Detalles'] # <--- Agregado aquí
                 }
 
                 for final, originales in mapeos.items():
@@ -121,15 +117,14 @@ with tab2:
                 fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- TABLA FINAL ---
+                # --- TABLA FINAL CON DETALLES ---
                 st.subheader("Listado de Registros Detallado")
-                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final']].copy()
-                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?']
+                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
+                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?', 'Detalles']
                 
                 df_v['Fecha'] = df_v['Fecha'].dt.strftime('%d-%m-%Y')
+                # Si no hay detalles, ponemos un guión para que se vea limpio
+                df_v['Detalles'] = df_v['Detalles'].fillna("-")
                 
                 st.dataframe(df_v, use_container_width=True, hide_index=True)
             else:
-                st.info("Sin datos registrados.")
-        except Exception as e:
-            st.error(f"Error al procesar la tabla: {e}")
