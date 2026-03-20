@@ -56,43 +56,39 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
-                # --- LA REGLA DEFINITIVA PARA ENERO ---
-                def arreglar_fecha_final(val):
+                # --- LA REGLA MATEMÁTICA PARA VENCER A EXCEL ---
+                def arreglar_fecha_absoluta(val):
                     if pd.isna(val): return pd.NaT
-                    # Fechas ingresadas correctamente desde la App
-                    if isinstance(val, datetime): return val
-                    if isinstance(val, pd.Timestamp): return val.to_pydatetime()
+                    
+                    # Convertimos todo a texto para aplicar la misma regla sin importar de dónde venga
+                    s = str(val).split(' ')[0].replace('/', '-')
                     
                     try:
-                        s = str(val).split(' ')[0].replace('/', '-')
                         parts = s.split('-')
                         if len(parts) == 3:
                             p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
                             
-                            # Si viene como YYYY-MM-DD
+                            # Si es un registro nuevo de la App (Viene como Año-Mes-Día)
                             if p1 > 2000:
                                 return datetime(p1, p2, p3)
                             
-                            # REGLA EXCLUSIVA PARA ENERO (donde Excel invirtió los números)
-                            # Si el primer número es 1, lo forzamos a que sea el Mes
-                            if p1 == 1:
-                                return datetime(p3, 1, p2) # Año, Mes(1), Día(p2)
-                            
-                            # Para todo el resto, asumimos el formato correcto chileno DD-MM-YYYY
+                            # REGLA EXCEL: Si el primer número es 12 o menos, Excel lo guardó como MES.
+                            if p1 <= 12:
+                                return datetime(p3, p1, p2) # Año, Mes, Día
+                            # Si el primer número es mayor a 12 (ej. 20-02), Excel lo dejó como DÍA.
                             else:
-                                return datetime(p3, p2, p1) # Año, Mes(p2), Día(p1)
+                                return datetime(p3, p2, p1) # Año, Mes, Día
                     except:
                         pass
                     
-                    # Último recurso por si algo falla
-                    return pd.to_datetime(val, dayfirst=True, errors='coerce')
+                    return pd.to_datetime(val, errors='coerce')
 
-                # Aplicamos la corrección
-                df['fecha_final'] = df['fecha_final'].apply(arreglar_fecha_final)
+                # Aplicamos la regla
+                df['fecha_final'] = df['fecha_final'].apply(arreglar_fecha_absoluta)
                 
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
                 
-                # Orden estricto cronológico
+                # Ordenamos cronológicamente (Más reciente arriba)
                 df['_id_str'] = df['_id'].astype(str)
                 df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
 
@@ -117,7 +113,7 @@ with tab1:
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 
-                # IMPRIMIR EN PANTALLA COMO DD-MM-YYYY
+                # IMPRIMIR EN PANTALLA SIEMPRE COMO DÍA-MES-AÑO
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 df_v['detalles_final'] = df_v['detalles_final'].fillna("-")
                 
