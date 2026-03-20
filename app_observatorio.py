@@ -27,7 +27,6 @@ client = iniciar_conexion()
 st.title("🛡️ Sistema Central - Observatorio de Seguridad")
 st.markdown("---")
 
-# Pestañas
 tab1, tab2 = st.tabs(["📊 Analítica y Reportes", "📝 Ingreso de Datos (Solo Admin)"])
 
 # --- TAB 1: ANALÍTICA Y GENERADOR DE TXT ---
@@ -42,15 +41,13 @@ with tab1:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # Fusión de columnas para datos antiguos y nuevos
                 mapeos = {
                     'fecha_final': ['fecha', 'Fecha'],
                     'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
                     'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
                     'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
                     'vid_final': ['tiene_videos', 'Videos', 'Video'],
-                    'detalles_final': ['detalles', 'Detalles'],
-                    'fecha_ingreso_sistema': ['fecha_registro'] # Guardamos cuando se creó para ordenar mejor
+                    'detalles_final': ['detalles', 'Detalles']
                 }
 
                 for final, originales in mapeos.items():
@@ -59,28 +56,55 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
-                # LIMPIEZA Y CORRECCIÓN DE FECHAS
-                # Al quitar dayfirst=True, Pandas podrá leer las fechas gringas de Excel y las chilenas sin mezclarlas
-                df['fecha_final'] = pd.to_datetime(df['fecha_final'], errors='coerce')
-                df['fecha_ingreso_sistema'] = pd.to_datetime(df['fecha_ingreso_sistema'], errors='coerce')
-                
-                # Eliminamos filas vacías
+                # --- FUNCIÓN "MÁGICA" PARA ARREGLAR EL ERROR DE EXCEL ---
+                def arreglar_fechas_locas(f):
+                    if pd.isna(f): return pd.NaT
+                    if isinstance(f, datetime): return f
+                    
+                    try:
+                        s = str(f).split(' ')[0].replace('/', '-')
+                        partes = s.split('-')
+                        
+                        if len(partes) == 3:
+                            p1, p2, p3 = int(partes[0]), int(partes[1]), int(partes[2])
+                            
+                            # Si el formato viene bien de la App (YYYY-MM-DD)
+                            if p1 > 2000:
+                                return datetime(p1, p2, p3)
+                            
+                            # REGLAS ESTRICTAS PARA TUS DATOS DE EXCEL:
+                            if p2 == 2: 
+                                # Si el mes está al medio y es 2 -> FEBRERO (DD-MM-YYYY)
+                                return datetime(p3, 2, p1)
+                            elif p1 == 1: 
+                                # Si el primer número es 1 -> ENERO (MM-DD-YYYY)
+                                return datetime(p3, 1, p2)
+                            else: 
+                                # Para todo lo demás, forzamos formato CHILENO (DD-MM-YYYY)
+                                if p2 <= 12:
+                                    return datetime(p3, p2, p1)
+                                else:
+                                    return datetime(p3, p1, p2)
+                    except:
+                        pass
+                    return pd.to_datetime(f, errors='coerce')
+
+                # Aplicamos la magia y ordenamos
+                df['fecha_final'] = df['fecha_final'].apply(arreglar_fechas_locas)
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
                 
-                # ORDEN CRONOLÓGICO ESTRICTO: Primero la fecha del suceso (2026), luego la fecha en que lo digitaste
-                df = df.sort_values(by=['fecha_final', 'fecha_ingreso_sistema'], ascending=[False, False])
+                # ORDEN CRONOLÓGICO: Más reciente (Febrero) arriba, más antiguo (Enero) abajo
+                df = df.sort_values(by='fecha_final', ascending=False)
 
                 for col in ['img_final', 'vid_final']:
                     df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
 
-                # Buscador
                 busq = st.text_input("🔍 Buscar dirección o delito:", key="search_v5")
                 if busq:
                     mask_dir = df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)
                     mask_del = df['delito_final'].astype(str).str.contains(busq, case=False, na=False)
                     df = df[mask_dir | mask_del]
 
-                # Gráfico
                 st.subheader("Estadísticas")
                 cnt = df['delito_final'].value_counts().reset_index()
                 cnt.columns = ['Delito', 'Cant']
@@ -88,13 +112,12 @@ with tab1:
                 fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- TABLA INTERACTIVA ---
                 st.subheader("Selección de Casos para Fiscalía")
                 st.write("📌 Marca la casilla 'Seleccionar' en los casos que necesites exportar.")
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 
-                # Formateamos estrictamente a DÍA-MES-AÑO para la pantalla
+                # FORMATEAMOS VISUALMENTE PARA QUE SIEMPRE VEAS DIA-MES-AÑO
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 df_v['detalles_final'] = df_v['detalles_final'].fillna("-")
                 
@@ -112,7 +135,6 @@ with tab1:
 
                 seleccionados = edited_df[edited_df["Seleccionar"] == True]
 
-                # --- GENERADOR DE TXT ---
                 if not seleccionados.empty:
                     st.success(f"Has seleccionado {len(seleccionados)} caso(s) para el reporte.")
                     
@@ -124,7 +146,6 @@ with tab1:
                     for index, row in seleccionados.iterrows():
                         texto_reporte += f"{contador}- {row['Dirección']}, La Florida.\n"
                         
-                        # Traducción a formato de oficio (ej: 08 de Marzo del 2026)
                         partes_fecha = str(row['Fecha']).split('-')
                         if len(partes_fecha) == 3:
                             fecha_formateada = f"{partes_fecha[0]} de {meses_es.get(partes_fecha[1], partes_fecha[1])} del {partes_fecha[2]}"
