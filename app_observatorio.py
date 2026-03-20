@@ -204,4 +204,22 @@ with tab2:
                 c1, c2, c3 = st.columns(3)
                 with c1: tiene_img = st.checkbox("¿Imágenes?")
                 with c2: tiene_vid = st.checkbox("¿Videos?")
-                with c3: es_rel = st.checkbox("
+                with c3: es_rel = st.checkbox("¿Relevante?")
+                    
+                det = st.text_area("Detalles")
+                if st.form_submit_button("Guardar Registro"):
+                    t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
+                    coleccion.insert_one({
+                        "fecha": datetime.combine(fecha_in, datetime.min.time()),
+                        "direccion": dir_in,
+                        "tipo_delito": t_fin,
+                        "tiene_imagenes": tiene_img,
+                        "tiene_videos": tiene_vid,
+                        "es_relevante": es_rel,
+                        "detalles": det,
+                        "fecha_registro": datetime.now()
+                    })
+                    st.success("✅ Guardado correctamente")
+                    st.rerun()
+    elif clave_ingresada != "":
+        st.error("❌ Clave incorrecta. Solo el personal autorizado puede ingresar datos.")
