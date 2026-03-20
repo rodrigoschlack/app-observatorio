@@ -42,14 +42,15 @@ with tab1:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # Fusión de columnas
+                # Fusión de columnas para datos antiguos y nuevos
                 mapeos = {
                     'fecha_final': ['fecha', 'Fecha'],
                     'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
                     'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
                     'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
                     'vid_final': ['tiene_videos', 'Videos', 'Video'],
-                    'detalles_final': ['detalles', 'Detalles']
+                    'detalles_final': ['detalles', 'Detalles'],
+                    'fecha_ingreso_sistema': ['fecha_registro'] # Guardamos cuando se creó para ordenar mejor
                 }
 
                 for final, originales in mapeos.items():
@@ -58,10 +59,16 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
-                # Limpieza y conversión de fechas (Formato chileno día primero)
-                df['fecha_final'] = pd.to_datetime(df['fecha_final'], dayfirst=True, errors='coerce')
+                # LIMPIEZA Y CORRECCIÓN DE FECHAS
+                # Al quitar dayfirst=True, Pandas podrá leer las fechas gringas de Excel y las chilenas sin mezclarlas
+                df['fecha_final'] = pd.to_datetime(df['fecha_final'], errors='coerce')
+                df['fecha_ingreso_sistema'] = pd.to_datetime(df['fecha_ingreso_sistema'], errors='coerce')
+                
+                # Eliminamos filas vacías
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
-                df = df.sort_values(by='fecha_final', ascending=False)
+                
+                # ORDEN CRONOLÓGICO ESTRICTO: Primero la fecha del suceso (2026), luego la fecha en que lo digitaste
+                df = df.sort_values(by=['fecha_final', 'fecha_ingreso_sistema'], ascending=[False, False])
 
                 for col in ['img_final', 'vid_final']:
                     df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
@@ -81,23 +88,20 @@ with tab1:
                 fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # --- TABLA INTERACTIVA PARA SELECCIONAR CASOS ---
+                # --- TABLA INTERACTIVA ---
                 st.subheader("Selección de Casos para Fiscalía")
-                st.write("📌 Marca la casilla 'Seleccionar' en los casos que necesites exportar al reporte.")
+                st.write("📌 Marca la casilla 'Seleccionar' en los casos que necesites exportar.")
                 
-                # Preparamos los datos para mostrar
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 
-                # Formato visual correcto de la tabla (ej: 08-03-2026)
+                # Formateamos estrictamente a DÍA-MES-AÑO para la pantalla
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 df_v['detalles_final'] = df_v['detalles_final'].fillna("-")
                 
                 df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?', 'Detalles']
                 
-                # Agregamos la columna de checkbox al principio
                 df_v.insert(0, "Seleccionar", False)
 
-                # Usamos data_editor
                 edited_df = st.data_editor(
                     df_v,
                     hide_index=True,
@@ -106,23 +110,21 @@ with tab1:
                     use_container_width=True
                 )
 
-                # Filtramos solo los que marcaste
                 seleccionados = edited_df[edited_df["Seleccionar"] == True]
 
-                # --- GENERADOR DEL BLOC DE NOTAS (TXT) ---
+                # --- GENERADOR DE TXT ---
                 if not seleccionados.empty:
                     st.success(f"Has seleccionado {len(seleccionados)} caso(s) para el reporte.")
                     
                     texto_reporte = "Estimadas/os,\n\nJunto con saludar y esperando se encuentren bien, adjunto información de hechos de relevancia.\n\n"
                     
-                    # Diccionario para traducir los números a meses en el TXT
                     meses_es = {"01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril", "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto", "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre"}
                     
                     contador = 1
                     for index, row in seleccionados.iterrows():
                         texto_reporte += f"{contador}- {row['Dirección']}, La Florida.\n"
                         
-                        # Convertimos el "08-03-2026" a "08 de Marzo del 2026"
+                        # Traducción a formato de oficio (ej: 08 de Marzo del 2026)
                         partes_fecha = str(row['Fecha']).split('-')
                         if len(partes_fecha) == 3:
                             fecha_formateada = f"{partes_fecha[0]} de {meses_es.get(partes_fecha[1], partes_fecha[1])} del {partes_fecha[2]}"
@@ -146,7 +148,6 @@ with tab1:
                         
                     texto_reporte += "Isabel Romero\nRodrigo Schlack\nDepartamento de televigilancia y comunicación radial."
 
-                    # Botón de descarga TXT
                     st.download_button(
                         label="📄 Descargar Reporte (TXT)",
                         data=texto_reporte,
