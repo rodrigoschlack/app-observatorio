@@ -3,7 +3,6 @@ import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime
 import plotly.express as px
-import io
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
@@ -31,7 +30,7 @@ st.markdown("---")
 # Pestañas
 tab1, tab2 = st.tabs(["📊 Analítica y Reportes", "📝 Ingreso de Datos (Solo Admin)"])
 
-# --- TAB 1: ANALÍTICA Y DESCARGA DE EXCEL ---
+# --- TAB 1: ANALÍTICA Y GENERADOR DE TXT ---
 with tab1:
     st.header("Panel de Análisis de Datos")
     if client:
@@ -70,7 +69,6 @@ with tab1:
                 # Buscador
                 busq = st.text_input("🔍 Buscar dirección o delito:", key="search_v5")
                 if busq:
-                    # El buscador ahora filtra por dirección O por delito
                     mask_dir = df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)
                     mask_del = df['delito_final'].astype(str).str.contains(busq, case=False, na=False)
                     df = df[mask_dir | mask_del]
@@ -83,28 +81,66 @@ with tab1:
                 fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Tabla Final
-                st.subheader("Listado de Registros Detallado")
+                # --- TABLA INTERACTIVA PARA SELECCIONAR CASOS ---
+                st.subheader("Selección de Casos para Fiscalía")
+                st.write("📌 Marca la casilla 'Seleccionar' en los casos que necesites exportar al reporte.")
+                
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?', 'Detalles']
-                
-                df_v['Fecha'] = df_v['Fecha'].dt.strftime('%d-%m-%Y')
+                df_v['Fecha'] = df_v['Fecha'].dt.strftime('%d de %B del %Y').str.replace('March', 'Marzo').str.replace('February', 'Febrero').str.replace('January', 'Enero') # Formateo chileno básico
                 df_v['Detalles'] = df_v['Detalles'].fillna("-")
                 
-                st.dataframe(df_v, use_container_width=True, hide_index=True)
+                # Agregamos la columna de checkbox al principio
+                df_v.insert(0, "Seleccionar", False)
 
-                # --- NUEVO: BOTÓN DE DESCARGA EXCEL ---
-                st.markdown("---")
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_v.to_excel(writer, index=False, sheet_name='Reporte_Seguridad')
-                
-                st.download_button(
-                    label="📥 Descargar Reporte Filtrado (Excel)",
-                    data=buffer.getvalue(),
-                    file_name=f"Reporte_Observatorio_{datetime.now().strftime('%d%m%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                # Usamos data_editor para que puedas marcar las casillas
+                edited_df = st.data_editor(
+                    df_v,
+                    hide_index=True,
+                    column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", required=True)},
+                    disabled=df_v.columns.drop("Seleccionar"), # Bloquea las otras columnas para que no edites los datos por error
+                    use_container_width=True
                 )
+
+                # Filtramos solo los que marcaste
+                seleccionados = edited_df[edited_df["Seleccionar"] == True]
+
+                # --- GENERADOR DEL BLOC DE NOTAS (TXT) ---
+                if not seleccionados.empty:
+                    st.success(f"Has seleccionado {len(seleccionados)} caso(s) para el reporte.")
+                    
+                    # Construir el texto con el formato exacto que pediste
+                    texto_reporte = "Estimadas/os,\n\nJunto con saludar y esperando se encuentren bien, adjunto información de hechos de relevancia.\n\n"
+                    
+                    contador = 1
+                    for index, row in seleccionados.iterrows():
+                        texto_reporte += f"{contador}- {row['Dirección']}, La Florida.\n"
+                        texto_reporte += f"Fecha: {row['Fecha']}.\n"
+                        texto_reporte += f"Hora: [EDITAR HORA] (como referencia)\n"
+                        texto_reporte += f"Delito: {row['Tipo de Delito']}.\n"
+                        
+                        # Lógica automática para las observaciones
+                        if row['¿Imágenes?'] == "❌ No" and row['¿Videos?'] == "❌ No":
+                            obs = "En el lugar no fue posible realizar el levantamiento de material audiovisual."
+                        else:
+                            obs = "Se logró levantamiento de material audiovisual en el lugar."
+                            
+                        # Sumar los detalles si existen
+                        if row['Detalles'] != "-":
+                            obs += f" {row['Detalles']}"
+                            
+                        texto_reporte += f"Observaciones: {obs}\n\n"
+                        contador += 1
+                        
+                    texto_reporte += "Isabel Romero\nRodrigo Schlack\nDepartamento de televigilancia y comunicación radial."
+
+                    # Botón de descarga
+                    st.download_button(
+                        label="📄 Descargar Reporte (TXT)",
+                        data=texto_reporte,
+                        file_name=f"Reporte_Fiscalia_{datetime.now().strftime('%d%m%Y')}.txt",
+                        mime="text/plain"
+                    )
 
             else:
                 st.info("Sin datos registrados.")
