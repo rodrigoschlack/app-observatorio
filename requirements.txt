@@ -3,3 +3,4 @@ pandas
 pymongo
 dnspython
 plotly
+openpyxl
