@@ -56,25 +56,40 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
-                # --- LECTURA PURA Y ESTRICTA DE TUS DATOS ---
-                def leer_fecha_exacta(val):
+                # --- EL TRUCO MAESTRO PARA VENCER A EXCEL ---
+                def arreglar_fechas_excel(val):
                     if pd.isna(val): return pd.NaT
+                    # Los registros nuevos que hagas desde la App ya vienen perfectos, no se tocan
                     if isinstance(val, datetime): return val
                     if isinstance(val, pd.Timestamp): return val.to_pydatetime()
                     
                     try:
-                        # Extrae solo la fecha y fuerza a que el primer número sea el DÍA
-                        s = str(val).split(' ')[0]
-                        return pd.to_datetime(s, dayfirst=True, errors='coerce')
+                        s = str(val).split(' ')[0].replace('/', '-')
+                        parts = s.split('-')
+                        if len(parts) == 3:
+                            p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
+                            
+                            # Si es formato año-mes-día (App)
+                            if p1 > 2000:
+                                return datetime(p1, p2, p3)
+                            
+                            # REGLA DE HIERRO PARA TUS DATOS:
+                            # Si empieza con 1 (Enero) o 2 (Febrero), Excel lo guardó como MES-DÍA
+                            if p1 == 1 or p1 == 2:
+                                return datetime(p3, p1, p2) # Año, Mes, Día
+                            else:
+                                # Si empieza con 19, 20, etc., Excel lo guardó como DÍA-MES
+                                return datetime(p3, p2, p1) # Año, Mes, Día
                     except:
-                        return pd.NaT
+                        pass
+                    return pd.to_datetime(val, errors='coerce')
 
-                # Aplicamos la lectura sin cambiar tus números
-                df['fecha_final'] = df['fecha_final'].apply(leer_fecha_exacta)
+                # Aplicamos la regla
+                df['fecha_final'] = df['fecha_final'].apply(arreglar_fechas_excel)
                 
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
                 
-                # Orden estricto: Fecha más reciente arriba
+                # Desempate con _id para orden cronológico estricto
                 df['_id_str'] = df['_id'].astype(str)
                 df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
 
@@ -99,7 +114,7 @@ with tab1:
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 
-                # IMPRIMIR VISUALMENTE DÍA-MES-AÑO
+                # IMPRIMIR EN FORMATO CHILENO PERFECTO (DÍA-MES-AÑO)
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 df_v['detalles_final'] = df_v['detalles_final'].fillna("-")
                 
