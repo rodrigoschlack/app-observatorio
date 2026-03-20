@@ -87,7 +87,7 @@ with tab2:
                     'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
                     'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
                     'vid_final': ['tiene_videos', 'Videos', 'Video'],
-                    'detalles_final': ['detalles', 'Detalles'] # <--- Agregado aquí
+                    'detalles_final': ['detalles', 'Detalles']
                 }
 
                 for final, originales in mapeos.items():
@@ -123,8 +123,10 @@ with tab2:
                 df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?', 'Detalles']
                 
                 df_v['Fecha'] = df_v['Fecha'].dt.strftime('%d-%m-%Y')
-                # Si no hay detalles, ponemos un guión para que se vea limpio
                 df_v['Detalles'] = df_v['Detalles'].fillna("-")
                 
                 st.dataframe(df_v, use_container_width=True, hide_index=True)
             else:
+                st.info("Sin datos registrados.")
+        except Exception as e:
+            st.error(f"Error al procesar la tabla: {e}")
