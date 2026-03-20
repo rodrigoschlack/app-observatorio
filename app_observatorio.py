@@ -41,7 +41,6 @@ with tab1:
             if datos:
                 df = pd.DataFrame(datos)
                 
-                # Fusión de columnas (Datos antiguos de Compass + Nuevos de App)
                 mapeos = {
                     'fecha_final': ['fecha', 'Fecha'],
                     'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
@@ -57,43 +56,38 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
-                # --- EL PARCHE DEFINITIVO PARA LAS FECHAS ---
+                # --- LA REGLA DE ORO PARA VENCER A EXCEL ---
                 def arreglar_fechas_estricto(val):
                     if pd.isna(val): return pd.NaT
-                    # 1. Si es un registro NUEVO de la App, ya es datetime, NO LO TOCAMOS.
+                    # Los registros nuevos hechos desde la App ya vienen bien
                     if isinstance(val, datetime): return val
                     if isinstance(val, pd.Timestamp): return val.to_pydatetime()
                     
-                    # 2. Si es texto del Excel antiguo, lo desarmamos y analizamos
                     try:
                         s = str(val).split(' ')[0].replace('/', '-')
                         parts = s.split('-')
                         if len(parts) == 3:
                             p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
                             
-                            if p1 > 2000: # Si viene como YYYY-MM-DD
+                            if p1 > 2000:
                                 return datetime(p1, p2, p3)
-                            elif p3 > 2000: # Si el año está al final
-                                if p1 == 1: 
-                                    # Caso ENERO (formato gringo MM-DD-YYYY del Excel)
-                                    return datetime(p3, p1, p2)
-                                else:
-                                    # Caso FEBRERO y el resto (formato chileno DD-MM-YYYY)
-                                    return datetime(p3, p2, p1)
+                            
+                            # Si el primer número es 12 o menos, Excel lo invirtió a MES-DÍA-AÑO
+                            if p1 <= 12:
+                                return datetime(p3, p1, p2)
+                            # Si el número es mayor a 12 (ej: 20-02), es DÍA-MES-AÑO
+                            else:
+                                return datetime(p3, p2, p1)
                     except:
                         pass
                     return pd.to_datetime(val, errors='coerce')
 
-                # Aplicamos el parche
                 df['fecha_final'] = df['fecha_final'].apply(arreglar_fechas_estricto)
                 
-                # Limpiamos basura
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
                 
-                # --- ORDEN CRONOLÓGICO PERFECTO ---
-                # Convertimos _id a texto para usarlo como desempate (contiene la hora exacta de creación)
+                # Desempate con _id para orden cronológico estricto
                 df['_id_str'] = df['_id'].astype(str)
-                # Ordena primero por Fecha (Descendente) y luego por ID/Hora de ingreso (Descendente)
                 df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
 
                 for col in ['img_final', 'vid_final']:
@@ -117,7 +111,7 @@ with tab1:
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 
-                # FORMATEAMOS VISUALMENTE A DÍA-MES-AÑO E IMPRIMIMOS
+                # IMPRIMIR SIEMPRE EN FORMATO CHILENO: DÍA-MES-AÑO
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 df_v['detalles_final'] = df_v['detalles_final'].fillna("-")
                 
@@ -135,7 +129,6 @@ with tab1:
 
                 seleccionados = edited_df[edited_df["Seleccionar"] == True]
 
-                # --- GENERADOR DEL BLOC DE NOTAS ---
                 if not seleccionados.empty:
                     st.success(f"Has seleccionado {len(seleccionados)} caso(s) para el reporte.")
                     
@@ -211,22 +204,4 @@ with tab2:
                 c1, c2, c3 = st.columns(3)
                 with c1: tiene_img = st.checkbox("¿Imágenes?")
                 with c2: tiene_vid = st.checkbox("¿Videos?")
-                with c3: es_rel = st.checkbox("¿Relevante?")
-                    
-                det = st.text_area("Detalles")
-                if st.form_submit_button("Guardar Registro"):
-                    t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
-                    coleccion.insert_one({
-                        "fecha": datetime.combine(fecha_in, datetime.min.time()),
-                        "direccion": dir_in,
-                        "tipo_delito": t_fin,
-                        "tiene_imagenes": tiene_img,
-                        "tiene_videos": tiene_vid,
-                        "es_relevante": es_rel,
-                        "detalles": det,
-                        "fecha_registro": datetime.now()
-                    })
-                    st.success("✅ Guardado correctamente")
-                    st.rerun()
-    elif clave_ingresada != "":
-        st.error("❌ Clave incorrecta. Solo el personal autorizado puede ingresar datos.")
+                with c3: es_rel = st.checkbox("
