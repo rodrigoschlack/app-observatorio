@@ -3,6 +3,7 @@ import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime
 import plotly.express as px
+import io
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
@@ -27,10 +28,10 @@ client = iniciar_conexion()
 st.title("🛡️ Sistema Central - Observatorio de Seguridad")
 st.markdown("---")
 
-# INVERTIMOS EL ORDEN: Analítica primero (público), Ingreso después (privado)
+# Pestañas
 tab1, tab2 = st.tabs(["📊 Analítica y Reportes", "📝 Ingreso de Datos (Solo Admin)"])
 
-# --- TAB 1: ANALÍTICA Y TABLA DETALLADA (PÚBLICO) ---
+# --- TAB 1: ANALÍTICA Y DESCARGA DE EXCEL ---
 with tab1:
     st.header("Panel de Análisis de Datos")
     if client:
@@ -42,6 +43,7 @@ with tab1:
             if datos:
                 df = pd.DataFrame(datos)
                 
+                # Fusión de columnas
                 mapeos = {
                     'fecha_final': ['fecha', 'Fecha'],
                     'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
@@ -57,6 +59,7 @@ with tab1:
                         if orig in df.columns:
                             df[final] = df[final].fillna(df[orig])
 
+                # Limpieza
                 df['fecha_final'] = pd.to_datetime(df['fecha_final'], dayfirst=True, errors='coerce')
                 df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
                 df = df.sort_values(by='fecha_final', ascending=False)
@@ -64,10 +67,15 @@ with tab1:
                 for col in ['img_final', 'vid_final']:
                     df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
 
-                busq = st.text_input("🔍 Buscar dirección:", key="search_v5")
+                # Buscador
+                busq = st.text_input("🔍 Buscar dirección o delito:", key="search_v5")
                 if busq:
-                    df = df[df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)]
+                    # El buscador ahora filtra por dirección O por delito
+                    mask_dir = df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)
+                    mask_del = df['delito_final'].astype(str).str.contains(busq, case=False, na=False)
+                    df = df[mask_dir | mask_del]
 
+                # Gráfico
                 st.subheader("Estadísticas")
                 cnt = df['delito_final'].value_counts().reset_index()
                 cnt.columns = ['Delito', 'Cant']
@@ -75,6 +83,7 @@ with tab1:
                 fig.update_layout(showlegend=False, height=350, margin=dict(l=0, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
+                # Tabla Final
                 st.subheader("Listado de Registros Detallado")
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', '¿Imágenes?', '¿Videos?', 'Detalles']
@@ -83,19 +92,31 @@ with tab1:
                 df_v['Detalles'] = df_v['Detalles'].fillna("-")
                 
                 st.dataframe(df_v, use_container_width=True, hide_index=True)
+
+                # --- NUEVO: BOTÓN DE DESCARGA EXCEL ---
+                st.markdown("---")
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_v.to_excel(writer, index=False, sheet_name='Reporte_Seguridad')
+                
+                st.download_button(
+                    label="📥 Descargar Reporte Filtrado (Excel)",
+                    data=buffer.getvalue(),
+                    file_name=f"Reporte_Observatorio_{datetime.now().strftime('%d%m%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
             else:
                 st.info("Sin datos registrados.")
         except Exception as e:
             st.error(f"Error al procesar la tabla: {e}")
 
-# --- TAB 2: INGRESO (PROTEGIDO CON CONTRASEÑA) ---
+# --- TAB 2: INGRESO (PROTEGIDO) ---
 with tab2:
     st.header("Registrar Nuevo Incidente")
     
-    # SISTEMA DE SEGURIDAD
     clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
     
-    # Buscamos la clave en los Secrets, si no existe usamos una por defecto
     clave_secreta = "Florida2026" 
     if "admin" in st.secrets and "clave" in st.secrets["admin"]:
         clave_secreta = st.secrets["admin"]["clave"]
