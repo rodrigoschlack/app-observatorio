@@ -4,7 +4,8 @@ from pymongo import MongoClient
 from datetime import datetime
 import plotly.express as px
 from bson.objectid import ObjectId
-from geopy.geocoders import Nominatim # NUEVA LIBRERÍA PARA EL MAPA
+from geopy.geocoders import Nominatim
+import time # NUEVO: Para no saturar el satélite
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
@@ -24,24 +25,24 @@ def iniciar_conexion():
 
 client = iniciar_conexion()
 
-# --- 2. MOTOR DE GEOLOCALIZACIÓN (SATÉLITE) ---
-# Esta función traduce tus direcciones a coordenadas y las guarda en memoria para no cargar lento
-@st.cache_data
+# --- 2. MOTOR DE GEOLOCALIZACIÓN (SATÉLITE CON FRENO) ---
+@st.cache_data(show_spinner=False)
 def obtener_coordenadas(direcciones):
     geolocator = Nominatim(user_agent="observatorio_florida_app")
     coords = {}
     for d in direcciones:
         try:
-            # Reemplazamos el "&" por "y" porque al satélite le cuesta leer las intersecciones
             dir_limpia = str(d).replace("&", "y")
-            # Buscamos la dirección agregando el contexto de la comuna
-            loc = geolocator.geocode(f"{dir_limpia}, La Florida, Santiago, Chile", timeout=5)
+            loc = geolocator.geocode(f"{dir_limpia}, La Florida, Santiago, Chile", timeout=10)
             if loc:
                 coords[d] = (loc.latitude, loc.longitude)
             else:
                 coords[d] = (None, None)
         except:
             coords[d] = (None, None)
+        
+        # Pausa de 1 segundo entre cada búsqueda para que el satélite gratuito no nos bloquee
+        time.sleep(1) 
     return coords
 
 # --- 3. INTERFAZ PRINCIPAL ---
@@ -71,7 +72,7 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # Regla de Oro para las fechas de Excel
+        # Regla de Oro para las fechas
         def arreglar_fecha_absoluta(val):
             if pd.isna(val): return pd.NaT
             s = str(val).split(' ')[0].replace('/', '-')
@@ -93,10 +94,10 @@ if client:
         for col in ['img_final', 'vid_final']:
             df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
 
-        # --- BARRA LATERAL (FILTROS MAESTROS) ---
+        # --- BARRA LATERAL (FILTROS) ---
         with st.sidebar:
             st.header("⚙️ Filtros del Sistema")
-            st.write("Estos filtros controlan la Tabla y el Mapa al mismo tiempo.")
+            st.write("Estos filtros controlan la Tabla y el Mapa.")
             
             busq = st.text_input("🔍 Buscar dirección o delito:", placeholder="Ej: RCV o Pudeto")
             st.markdown("---")
@@ -169,48 +170,46 @@ if client:
             else:
                 st.warning("No hay registros en el rango de fechas seleccionado.")
 
-        # PESTAÑA 2: EL MAPA
+        # PESTAÑA 2: EL MAPA MEJORADO
         with tab2:
             st.header("📍 Mapa de Puntos Calientes")
             if not df.empty:
-                st.write("Ubicando los procedimientos mediante satélite... 🛰️ *(Puede tardar unos segundos la primera vez)*")
+                st.write("Presiona el botón para escanear las direcciones. Si tienes muchos datos, puede tardar un poco la primera vez.")
                 
-                # Obtenemos las coordenadas
-                direcciones_unicas = df['direccion_final'].unique()
-                dic_coords = obtener_coordenadas(direcciones_unicas)
-                
-                # Asignamos latitud y longitud a los datos
-                df['lat'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[0])
-                df['lon'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[1])
-                
-                # Filtramos los que el satélite logró encontrar
-                df_mapa = df.dropna(subset=['lat', 'lon'])
-                
-                if not df_mapa.empty:
-                    # Dibujamos el mapa interactivo
-                    fig_mapa = px.scatter_mapbox(
-                        df_mapa, 
-                        lat="lat", 
-                        lon="lon", 
-                        color="delito_final", # Pinta los puntos de distinto color según el delito
-                        hover_name="direccion_final", # Muestra la dirección al pasar el mouse
-                        zoom=12, 
-                        height=600
-                    )
-                    fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
-                    st.plotly_chart(fig_mapa, use_container_width=True)
-                    
-                    # Pequeño reporte de fallos
-                    encontrados = len(df_mapa)
-                    totales = len(df)
-                    if encontrados < totales:
-                        st.info(f"Se lograron ubicar {encontrados} de {totales} direcciones. Si alguna no aparece, es porque la dirección es una intersección compleja (ej. 'Calle A & Calle B') o carece de numeración y el satélite gratuito no logró localizarla.")
-                else:
-                    st.warning("No se encontraron coordenadas exactas para las direcciones filtradas.")
+                # BOTÓN DE ENCENDIDO DEL MAPA
+                if st.button("🗺️ Cargar Mapa", type="primary"):
+                    with st.spinner("Ubicando los procedimientos mediante satélite... 🛰️ (Buscando 1 a 1 para no saturar)"):
+                        direcciones_unicas = df['direccion_final'].unique()
+                        dic_coords = obtener_coordenadas(direcciones_unicas)
+                        
+                        df['lat'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[0])
+                        df['lon'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[1])
+                        
+                        df_mapa = df.dropna(subset=['lat', 'lon'])
+                        
+                        if not df_mapa.empty:
+                            fig_mapa = px.scatter_mapbox(
+                                df_mapa, 
+                                lat="lat", 
+                                lon="lon", 
+                                color="delito_final", 
+                                hover_name="direccion_final", 
+                                zoom=12, 
+                                height=600
+                            )
+                            fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
+                            st.plotly_chart(fig_mapa, use_container_width=True)
+                            
+                            encontrados = len(df_mapa)
+                            totales = len(df)
+                            if encontrados < totales:
+                                st.info(f"Se lograron ubicar {encontrados} de {totales} direcciones. Si alguna no aparece, es porque la dirección es muy compleja o carece de numeración y el satélite gratuito no logró localizarla.")
+                        else:
+                            st.warning("No se encontraron coordenadas exactas para las direcciones filtradas.")
             else:
-                st.warning("No hay datos para mostrar en el mapa con los filtros actuales.")
+                st.warning("No hay datos para mostrar en el mapa.")
 
-        # PESTAÑA 3: ADMINISTRACIÓN (Tu zona segura)
+        # PESTAÑA 3: ADMINISTRACIÓN
         with tab3:
             st.header("Área de Administración")
             clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
