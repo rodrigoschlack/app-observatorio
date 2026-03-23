@@ -5,7 +5,7 @@ from datetime import datetime
 import plotly.express as px
 from bson.objectid import ObjectId
 from geopy.geocoders import Nominatim
-import time # NUEVO: Para no saturar el satélite
+import time
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
@@ -25,25 +25,20 @@ def iniciar_conexion():
 
 client = iniciar_conexion()
 
-# --- 2. MOTOR DE GEOLOCALIZACIÓN (SATÉLITE CON FRENO) ---
+# --- 2. MOTOR DE GEOLOCALIZACIÓN INTELIGENTE (1 a 1) ---
+# Guarda cada dirección individualmente en memoria para que no tengas que esperar la próxima vez
 @st.cache_data(show_spinner=False)
-def obtener_coordenadas(direcciones):
-    geolocator = Nominatim(user_agent="observatorio_florida_app")
-    coords = {}
-    for d in direcciones:
-        try:
-            dir_limpia = str(d).replace("&", "y")
-            loc = geolocator.geocode(f"{dir_limpia}, La Florida, Santiago, Chile", timeout=10)
-            if loc:
-                coords[d] = (loc.latitude, loc.longitude)
-            else:
-                coords[d] = (None, None)
-        except:
-            coords[d] = (None, None)
-        
-        # Pausa de 1 segundo entre cada búsqueda para que el satélite gratuito no nos bloquee
-        time.sleep(1) 
-    return coords
+def obtener_coordenada_unica(d):
+    try:
+        time.sleep(1.5) # Freno de seguridad para no saturar al satélite
+        geolocator = Nominatim(user_agent="observatorio_florida_app")
+        dir_limpia = str(d).replace("&", "y")
+        loc = geolocator.geocode(f"{dir_limpia}, La Florida, Santiago, Chile", timeout=10)
+        if loc:
+            return loc.latitude, loc.longitude
+        return None, None
+    except:
+        return None, None
 
 # --- 3. INTERFAZ PRINCIPAL ---
 st.title("🛡️ Sistema Central - Observatorio de Seguridad")
@@ -170,152 +165,50 @@ if client:
             else:
                 st.warning("No hay registros en el rango de fechas seleccionado.")
 
-        # PESTAÑA 2: EL MAPA MEJORADO
+        # PESTAÑA 2: EL MAPA CON BARRA DE PROGRESO
         with tab2:
             st.header("📍 Mapa de Puntos Calientes")
             if not df.empty:
-                st.write("Presiona el botón para escanear las direcciones. Si tienes muchos datos, puede tardar un poco la primera vez.")
+                st.write("Presiona el botón para escanear las direcciones. Solo tomará tiempo la primera vez.")
                 
-                # BOTÓN DE ENCENDIDO DEL MAPA
                 if st.button("🗺️ Cargar Mapa", type="primary"):
-                    with st.spinner("Ubicando los procedimientos mediante satélite... 🛰️ (Buscando 1 a 1 para no saturar)"):
-                        direcciones_unicas = df['direccion_final'].unique()
-                        dic_coords = obtener_coordenadas(direcciones_unicas)
-                        
-                        df['lat'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[0])
-                        df['lon'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[1])
-                        
-                        df_mapa = df.dropna(subset=['lat', 'lon'])
-                        
-                        if not df_mapa.empty:
-                            fig_mapa = px.scatter_mapbox(
-                                df_mapa, 
-                                lat="lat", 
-                                lon="lon", 
-                                color="delito_final", 
-                                hover_name="direccion_final", 
-                                zoom=12, 
-                                height=600
-                            )
-                            fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
-                            st.plotly_chart(fig_mapa, use_container_width=True)
-                            
-                            encontrados = len(df_mapa)
-                            totales = len(df)
-                            if encontrados < totales:
-                                st.info(f"Se lograron ubicar {encontrados} de {totales} direcciones. Si alguna no aparece, es porque la dirección es muy compleja o carece de numeración y el satélite gratuito no logró localizarla.")
-                        else:
-                            st.warning("No se encontraron coordenadas exactas para las direcciones filtradas.")
-            else:
-                st.warning("No hay datos para mostrar en el mapa.")
-
-        # PESTAÑA 3: ADMINISTRACIÓN
-        with tab3:
-            st.header("Área de Administración")
-            clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
-            
-            clave_secreta = "Florida2026" 
-            if "admin" in st.secrets and "clave" in st.secrets["admin"]:
-                clave_secreta = st.secrets["admin"]["clave"]
-                
-            if clave_ingresada == clave_secreta:
-                st.success("✅ Acceso concedido.")
-                opciones = ["RLH", "RCI", "RCV", "RP", "Otros"]
-
-                admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
-
-                with admin_tab1:
-                    with st.form("formulario_registro", clear_on_submit=True):
-                        col1, col2 = st.columns(2)
-                        with col1: fecha_in = st.date_input("Fecha del Suceso", datetime.now())
-                        with col2: dir_in = st.text_input("Dirección / Ubicación")
-                        
-                        t_sel = st.selectbox("Tipo de Delito", opciones)
-                        t_otro = st.text_input("Si eligió 'Otros', escriba el tipo de procedimiento aquí:")
-                        
-                        c1, c2, c3 = st.columns(3)
-                        with c1: tiene_img = st.checkbox("¿Imágenes?")
-                        with c2: tiene_vid = st.checkbox("¿Videos?")
-                        with c3: es_rel = st.checkbox("¿Relevante?")
-                            
-                        det = st.text_area("Detalles")
-                        if st.form_submit_button("Guardar Registro"):
-                            t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
-                            coleccion.insert_one({
-                                "fecha": datetime.combine(fecha_in, datetime.min.time()),
-                                "direccion": dir_in,
-                                "tipo_delito": t_fin,
-                                "tiene_imagenes": tiene_img,
-                                "tiene_videos": tiene_vid,
-                                "es_relevante": es_rel,
-                                "detalles": det,
-                                "fecha_registro": datetime.now()
-                            })
-                            st.success("✅ Guardado correctamente")
-                            st.rerun()
-
-                with admin_tab2:
-                    st.write("Selecciona un registro reciente para modificarlo o eliminarlo de la base de datos.")
-                    ultimos = list(coleccion.find().sort("_id", -1).limit(100))
+                    direcciones_unicas = df['direccion_final'].unique()
+                    total_dirs = len(direcciones_unicas)
                     
-                    if ultimos:
-                        opciones_dict = {}
-                        for r in ultimos:
-                            f_str = r["fecha"].strftime('%d-%m-%Y') if "fecha" in r and isinstance(r["fecha"], datetime) else str(r.get("Fecha", "Fecha desc.")).split(" ")[0]
-                            d_str = r.get("direccion", r.get("Dirección", "Sin Dirección"))
-                            t_str = r.get("tipo_delito", r.get("Tipo de delito", "Delito desc."))
-                            label = f"{f_str} | {d_str} | {t_str}"
-                            opciones_dict[label] = r
-                            
-                        seleccion = st.selectbox("🔍 Buscar registro a editar:", ["Seleccione..."] + list(opciones_dict.keys()))
+                    # Interfaz de carga
+                    st.info(f"Iniciando escaneo de {total_dirs} direcciones...")
+                    barra = st.progress(0)
+                    texto_progreso = st.empty()
+                    
+                    dic_coords = {}
+                    for i, d in enumerate(direcciones_unicas):
+                        texto_progreso.text(f"Buscando por satélite ({i+1}/{total_dirs}): {d}")
+                        lat, lon = obtener_coordenada_unica(d)
+                        dic_coords[d] = (lat, lon)
+                        barra.progress((i + 1) / total_dirs)
+                    
+                    # Limpiamos la barra al terminar
+                    texto_progreso.empty()
+                    barra.empty()
+                    
+                    df['lat'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[0])
+                    df['lon'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[1])
+                    
+                    df_mapa = df.dropna(subset=['lat', 'lon'])
+                    
+                    if not df_mapa.empty:
+                        fig_mapa = px.scatter_mapbox(
+                            df_mapa, 
+                            lat="lat", 
+                            lon="lon", 
+                            color="delito_final", 
+                            hover_name="direccion_final", 
+                            zoom=12, 
+                            height=600
+                        )
+                        fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
+                        st.plotly_chart(fig_mapa, use_container_width=True)
                         
-                        if seleccion != "Seleccione...":
-                            doc = opciones_dict[seleccion]
-                            st.markdown("---")
-                            
-                            fecha_pre = doc.get("fecha", datetime.now()) if isinstance(doc.get("fecha", datetime.now()), datetime) else datetime.now()
-                            dir_pre = doc.get("direccion", doc.get("Dirección", ""))
-                            del_pre = doc.get("tipo_delito", doc.get("Tipo de delito", "RLH"))
-                            img_pre = bool(doc.get("tiene_imagenes", doc.get("Imágenes", False)))
-                            vid_pre = bool(doc.get("tiene_videos", doc.get("Videos", False)))
-                            rel_pre = bool(doc.get("es_relevante", doc.get("Relevante", False)))
-                            det_pre = doc.get("detalles", doc.get("Detalles", ""))
-                            if pd.isna(det_pre): det_pre = ""
-                            
-                            e_fecha = st.date_input("Corregir Fecha", fecha_pre)
-                            e_dir = st.text_input("Corregir Dirección", dir_pre)
-                            
-                            ops_edit = opciones.copy()
-                            if del_pre not in ops_edit and del_pre != "Otros": ops_edit.insert(0, del_pre)
-                            e_del = st.selectbox("Corregir Delito", ops_edit, index=ops_edit.index(del_pre) if del_pre in ops_edit else 0)
-                            
-                            c1, c2, c3 = st.columns(3)
-                            with c1: e_img = st.checkbox("¿Imágenes?", value=img_pre, key="e_img")
-                            with c2: e_vid = st.checkbox("¿Videos?", value=vid_pre, key="e_vid")
-                            with c3: e_rel = st.checkbox("¿Relevante?", value=rel_pre, key="e_rel")
-                                
-                            e_det = st.text_area("Corregir Detalles", value=str(det_pre))
-                            st.warning("⚠️ Los cambios serán permanentes.")
-                            
-                            col_btn1, col_btn2 = st.columns(2)
-                            with col_btn1:
-                                if st.button("💾 Actualizar Registro", use_container_width=True):
-                                    coleccion.update_one({"_id": doc["_id"]}, {"$set": {"fecha": datetime.combine(e_fecha, datetime.min.time()), "direccion": e_dir, "tipo_delito": e_del, "tiene_imagenes": e_img, "tiene_videos": e_vid, "es_relevante": e_rel, "detalles": e_det}})
-                                    st.success("✅ Registro actualizado.")
-                                    st.rerun()
-                            with col_btn2:
-                                seguro = st.checkbox("Confirmar eliminación")
-                                if st.button("🗑️ Eliminar Definitivamente", type="primary", use_container_width=True):
-                                    if seguro:
-                                        coleccion.delete_one({"_id": doc["_id"]})
-                                        st.error("🚨 Registro eliminado.")
-                                        st.rerun()
-                                    else:
-                                        st.warning("Debes marcar la casilla para borrar.")
-                    else:
-                        st.info("No hay registros disponibles para editar.")
-            elif clave_ingresada != "":
-                st.error("❌ Clave incorrecta. Solo el personal autorizado puede ingresar datos.")
-
-    else:
-        st.info("Sin datos registrados o error de base de datos.")
+                        encontrados = len(df_mapa)
+                        if encontrados < len(df):
+                            st.warning(f"
