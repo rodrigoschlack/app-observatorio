@@ -26,7 +26,6 @@ def iniciar_conexion():
 client = iniciar_conexion()
 
 # --- 2. MOTOR DE GEOLOCALIZACIÓN INTELIGENTE (1 a 1) ---
-# Guarda cada dirección individualmente en memoria para que no tengas que esperar la próxima vez
 @st.cache_data(show_spinner=False)
 def obtener_coordenada_unica(d):
     try:
@@ -175,7 +174,6 @@ if client:
                     direcciones_unicas = df['direccion_final'].unique()
                     total_dirs = len(direcciones_unicas)
                     
-                    # Interfaz de carga
                     st.info(f"Iniciando escaneo de {total_dirs} direcciones...")
                     barra = st.progress(0)
                     texto_progreso = st.empty()
@@ -187,7 +185,6 @@ if client:
                         dic_coords[d] = (lat, lon)
                         barra.progress((i + 1) / total_dirs)
                     
-                    # Limpiamos la barra al terminar
                     texto_progreso.empty()
                     barra.empty()
                     
@@ -211,4 +208,56 @@ if client:
                         
                         encontrados = len(df_mapa)
                         if encontrados < len(df):
-                            st.warning(f"
+                            mensaje_alerta = f"⚠️ Se ubicaron {encontrados} de {len(df)} registros. Algunas direcciones pueden ser muy ambiguas."
+                            st.warning(mensaje_alerta)
+                        else:
+                            st.success("✅ ¡Todas las direcciones fueron ubicadas con éxito en La Florida!")
+                    else:
+                        st.error("❌ No se encontraron coordenadas exactas para ninguna de las direcciones.")
+            else:
+                st.warning("No hay datos para mostrar en el mapa.")
+
+        # PESTAÑA 3: ADMINISTRACIÓN
+        with tab3:
+            st.header("Área de Administración")
+            clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
+            
+            clave_secreta = "Florida2026" 
+            if "admin" in st.secrets and "clave" in st.secrets["admin"]:
+                clave_secreta = st.secrets["admin"]["clave"]
+                
+            if clave_ingresada == clave_secreta:
+                st.success("✅ Acceso concedido.")
+                opciones = ["RLH", "RCI", "RCV", "RP", "Otros"]
+
+                admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
+
+                with admin_tab1:
+                    with st.form("formulario_registro", clear_on_submit=True):
+                        col1, col2 = st.columns(2)
+                        with col1: fecha_in = st.date_input("Fecha del Suceso", datetime.now())
+                        with col2: dir_in = st.text_input("Dirección / Ubicación")
+                        
+                        t_sel = st.selectbox("Tipo de Delito", opciones)
+                        t_otro = st.text_input("Si eligió 'Otros', escriba el tipo de procedimiento aquí:")
+                        
+                        c1, c2, c3 = st.columns(3)
+                        with c1: tiene_img = st.checkbox("¿Imágenes?")
+                        with c2: tiene_vid = st.checkbox("¿Videos?")
+                        with c3: es_rel = st.checkbox("¿Relevante?")
+                            
+                        det = st.text_area("Detalles")
+                        if st.form_submit_button("Guardar Registro"):
+                            t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
+                            coleccion.insert_one({
+                                "fecha": datetime.combine(fecha_in, datetime.min.time()),
+                                "direccion": dir_in,
+                                "tipo_delito": t_fin,
+                                "tiene_imagenes": tiene_img,
+                                "tiene_videos": tiene_vid,
+                                "es_relevante": es_rel,
+                                "detalles": det,
+                                "fecha_registro": datetime.now()
+                            })
+                            st.success("✅ Guardado correctamente")
+                            st.rerun()
