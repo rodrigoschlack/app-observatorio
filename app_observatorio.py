@@ -51,17 +51,18 @@ if client:
     if datos:
         df = pd.DataFrame(datos)
         
-        # Fusión de columnas antiguas y NUEVO CAMPO ARMAMENTO
+        # Fusión de columnas antiguas y NUEVAS
         mapeos = {
             'fecha_final': ['fecha', 'Fecha'],
             'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
             'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
             'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
             'vid_final': ['tiene_videos', 'Videos', 'Video'],
+            'relevante_final': ['es_relevante', 'Relevante'], # <-- Agregamos Relevante al mapeo
             'detalles_final': ['detalles', 'Detalles'],
             'modalidad_final': ['modalidad', 'Modalidad'],
             'vehiculo_final': ['vehiculo', 'Vehículo'],
-            'armamento_final': ['armamento', 'Armamento'], # <-- NUEVO
+            'armamento_final': ['armamento', 'Armamento'],
             'patente_final': ['patente', 'Patente'],
             'caracteristicas_final': ['caracteristicas', 'Características']
         }
@@ -90,7 +91,8 @@ if client:
         df['_id_str'] = df['_id'].astype(str)
         df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
 
-        for col in ['img_final', 'vid_final']:
+        # Formateamos las 3 casillas booleanas para que se vean bonitas
+        for col in ['img_final', 'vid_final', 'relevante_final']:
             df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
 
         # --- BARRA LATERAL (FILTROS MAESTROS) ---
@@ -167,19 +169,20 @@ if client:
                 st.markdown("---")
                 st.subheader("Selección de Casos para Fiscalía")
                 
-                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'detalles_final']].copy()
+                # ACTUALIZADO: Sacamos detalles y pusimos relevante
+                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 
-                for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'detalles_final']:
+                for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
                     df_v[col] = df_v[col].fillna("-")
                     
-                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales']
+                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?']
                 df_v.insert(0, "Seleccionar", False)
 
                 edited_df = st.data_editor(
                     df_v, hide_index=True,
                     column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", required=True)},
-                    disabled=['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales'], 
+                    disabled=['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?'], 
                     use_container_width=True
                 )
 
@@ -216,8 +219,11 @@ if client:
                         if car != "-": texto_reporte += f"Características de Sujetos: {car}\n"
 
                         obs = "En el lugar no fue posible realizar el levantamiento de material audiovisual." if row['¿Imágenes?'] == "❌ No" and row['¿Videos?'] == "❌ No" else "Se logró levantamiento de material audiovisual en el lugar."
-                        det_gen = row.get('Detalles Generales', "-")
-                        if det_gen != "-": obs += f" {det_gen}"
+                        
+                        # Rescatamos los detalles de la base de datos de fondo por si escribiste algo
+                        det_gen = df.loc[index, 'detalles_final'] if 'detalles_final' in df.columns else "-"
+                        if pd.notna(det_gen) and str(det_gen).strip() != "" and str(det_gen) != "-": obs += f" {det_gen}"
+                        
                         texto_reporte += f"Observaciones: {obs}\n\n"
                         contador += 1
                         
