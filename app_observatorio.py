@@ -51,7 +51,7 @@ if client:
     if datos:
         df = pd.DataFrame(datos)
         
-        # Fusión de columnas antiguas y todas las NUEVAS DE INTELIGENCIA
+        # Fusión de columnas
         mapeos = {
             'fecha_final': ['fecha', 'Fecha'],
             'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
@@ -95,19 +95,15 @@ if client:
         # --- BARRA LATERAL (FILTROS MAESTROS) ---
         with st.sidebar:
             st.header("⚙️ Filtros del Sistema")
-            st.write("Estos filtros controlan la Tabla y el Mapa.")
-            
-            # Ahora el buscador busca en las 4 nuevas columnas opcionales
             busq = st.text_input("🔍 Buscar dirección, delito, patente o MO:", placeholder="Ej: RCV o Pudeto o Patente")
             st.markdown("---")
             st.write("📅 **Rango de Fechas**")
             min_date = df['fecha_final'].min().date()
             max_date = df['fecha_final'].max().date()
-            
             fecha_inicio = st.date_input("Desde:", min_date, min_value=min_date, max_value=max_date)
             fecha_fin = st.date_input("Hasta:", max_date, min_value=min_date, max_value=max_date)
 
-        # Aplicamos los filtros de búsqueda y fechas
+        # Aplicamos los filtros
         if busq:
             mask_dir = df['direccion_final'].astype(str).str.contains(busq, case=False, na=False)
             mask_del = df['delito_final'].astype(str).str.contains(busq, case=False, na=False)
@@ -126,13 +122,44 @@ if client:
         # PESTAÑA 1: TABLA Y TXT
         with tab1:
             if not df.empty:
-                st.subheader("Estadísticas del periodo seleccionado")
-                cnt = df['delito_final'].value_counts().reset_index()
-                cnt.columns = ['Delito', 'Cant']
-                fig = px.bar(cnt, x='Cant', y='Delito', orientation='h', text='Cant', color='Delito')
-                fig.update_layout(showlegend=False, height=300, margin=dict(l=0, r=10, t=10, b=10))
-                st.plotly_chart(fig, use_container_width=True)
+                col_graf, col_intel = st.columns([1, 1])
+                
+                with col_graf:
+                    st.subheader("Estadísticas del periodo")
+                    cnt = df['delito_final'].value_counts().reset_index()
+                    cnt.columns = ['Delito', 'Cant']
+                    fig = px.bar(cnt, x='Cant', y='Delito', orientation='h', text='Cant', color='Delito')
+                    fig.update_layout(showlegend=False, height=280, margin=dict(l=0, r=10, t=10, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
 
+                # --- NUEVO: PANEL DE INTELIGENCIA CRIMINAL ---
+                with col_intel:
+                    st.subheader("🕵️‍♂️ Panel de Inteligencia Criminal")
+                    
+                    # 1. Alerta de Patentes Repetidas
+                    df_pat = df[(df['patente_final'].notna()) & (df['patente_final'] != "") & (df['patente_final'] != "-")]
+                    if not df_pat.empty:
+                        conteo_pat = df_pat['patente_final'].value_counts()
+                        repetidas = conteo_pat[conteo_pat > 1]
+                        if not repetidas.empty:
+                            st.error("🚨 **¡ALERTA DE PATRÓN! Patentes reincidentes detectadas:**")
+                            st.dataframe(repetidas.reset_index().rename(columns={'patente_final': 'Placa Patente', 'count': 'Cant. de Delitos'}), hide_index=True, use_container_width=True)
+                    
+                    # 2. Top Modalidades y Vehículos
+                    df_mod = df[(df['modalidad_final'].notna()) & (df['modalidad_final'] != "") & (df['modalidad_final'] != "-")]
+                    df_veh = df[(df['vehiculo_final'].notna()) & (df['vehiculo_final'] != "") & (df['vehiculo_final'] != "-")]
+                    
+                    c_m, c_v = st.columns(2)
+                    with c_m:
+                        if not df_mod.empty:
+                            st.write("🔥 **Top Modalidades**")
+                            st.dataframe(df_mod['modalidad_final'].value_counts().reset_index().rename(columns={'modalidad_final': 'Modalidad', 'count': 'Casos'}), hide_index=True)
+                    with c_v:
+                        if not df_veh.empty:
+                            st.write("🚗 **Top Vehículos**")
+                            st.dataframe(df_veh['vehiculo_final'].value_counts().reset_index().rename(columns={'vehiculo_final': 'Vehículo', 'count': 'Casos'}), hide_index=True)
+
+                st.markdown("---")
                 st.subheader("Selección de Casos para Fiscalía")
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'detalles_final']].copy()
@@ -196,7 +223,6 @@ if client:
             st.header("🔥 Zona de Calor de Delitos")
             if not df.empty:
                 st.write("Presiona el botón para escanear las direcciones y generar la zona de calor.")
-                
                 if st.button("🗺️ Generar Mapa de Calor", type="primary"):
                     direcciones_unicas = df['direccion_final'].unique()
                     total_dirs = len(direcciones_unicas)
@@ -217,12 +243,10 @@ if client:
                     
                     df['lat'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[0])
                     df['lon'] = df['direccion_final'].map(lambda x: dic_coords.get(x, (None, None))[1])
-                    
                     df_mapa = df.dropna(subset=['lat', 'lon']).copy()
                     
                     if not df_mapa.empty:
                         df_mapa['intensidad'] = 1 
-                        
                         fig_mapa = px.density_mapbox(
                             df_mapa, lat="lat", lon="lon", z="intensidad", radius=25,
                             hover_name="direccion_final", hover_data={"intensidad": False, "delito_final": True},
@@ -240,7 +264,6 @@ if client:
         with tab3:
             st.header("Área de Administración")
             clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
-            
             clave_secreta = "Florida2026" 
             if "admin" in st.secrets and "clave" in st.secrets["admin"]: clave_secreta = st.secrets["admin"]["clave"]
                 
