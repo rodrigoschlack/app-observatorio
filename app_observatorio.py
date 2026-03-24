@@ -51,7 +51,7 @@ if client:
     if datos:
         df = pd.DataFrame(datos)
         
-        # Fusión de columnas
+        # Fusión de columnas antiguas y NUEVO CAMPO ARMAMENTO
         mapeos = {
             'fecha_final': ['fecha', 'Fecha'],
             'direccion_final': ['direccion', 'Dirección', 'Ubicación'],
@@ -61,6 +61,7 @@ if client:
             'detalles_final': ['detalles', 'Detalles'],
             'modalidad_final': ['modalidad', 'Modalidad'],
             'vehiculo_final': ['vehiculo', 'Vehículo'],
+            'armamento_final': ['armamento', 'Armamento'], # <-- NUEVO
             'patente_final': ['patente', 'Patente'],
             'caracteristicas_final': ['caracteristicas', 'Características']
         }
@@ -95,7 +96,7 @@ if client:
         # --- BARRA LATERAL (FILTROS MAESTROS) ---
         with st.sidebar:
             st.header("⚙️ Filtros del Sistema")
-            busq = st.text_input("🔍 Buscar dirección, delito, patente o MO:", placeholder="Ej: RCV o Pudeto o Patente")
+            busq = st.text_input("🔍 Buscar dirección, delito, patente, MO o arma:", placeholder="Ej: RCV, Pudeto o Arma de fuego")
             st.markdown("---")
             st.write("📅 **Rango de Fechas**")
             min_date = df['fecha_final'].min().date()
@@ -109,9 +110,10 @@ if client:
             mask_del = df['delito_final'].astype(str).str.contains(busq, case=False, na=False)
             mask_mod = df['modalidad_final'].astype(str).str.contains(busq, case=False, na=False)
             mask_veh = df['vehiculo_final'].astype(str).str.contains(busq, case=False, na=False)
+            mask_arm = df['armamento_final'].astype(str).str.contains(busq, case=False, na=False)
             mask_pat = df['patente_final'].astype(str).str.contains(busq, case=False, na=False)
             mask_car = df['caracteristicas_final'].astype(str).str.contains(busq, case=False, na=False)
-            df = df[mask_dir | mask_del | mask_mod | mask_veh | mask_pat | mask_car]
+            df = df[mask_dir | mask_del | mask_mod | mask_veh | mask_arm | mask_pat | mask_car]
 
         mask_fechas = (df['fecha_final'].dt.date >= fecha_inicio) & (df['fecha_final'].dt.date <= fecha_fin)
         df = df[mask_fechas]
@@ -122,7 +124,7 @@ if client:
         # PESTAÑA 1: TABLA Y TXT
         with tab1:
             if not df.empty:
-                col_graf, col_intel = st.columns([1, 1])
+                col_graf, col_intel = st.columns([1, 1.5])
                 
                 with col_graf:
                     st.subheader("Estadísticas del periodo")
@@ -132,11 +134,10 @@ if client:
                     fig.update_layout(showlegend=False, height=280, margin=dict(l=0, r=10, t=10, b=10))
                     st.plotly_chart(fig, use_container_width=True)
 
-                # --- NUEVO: PANEL DE INTELIGENCIA CRIMINAL ---
+                # --- PANEL DE INTELIGENCIA CRIMINAL ---
                 with col_intel:
                     st.subheader("🕵️‍♂️ Panel de Inteligencia Criminal")
                     
-                    # 1. Alerta de Patentes Repetidas
                     df_pat = df[(df['patente_final'].notna()) & (df['patente_final'] != "") & (df['patente_final'] != "-")]
                     if not df_pat.empty:
                         conteo_pat = df_pat['patente_final'].value_counts()
@@ -145,36 +146,40 @@ if client:
                             st.error("🚨 **¡ALERTA DE PATRÓN! Patentes reincidentes detectadas:**")
                             st.dataframe(repetidas.reset_index().rename(columns={'patente_final': 'Placa Patente', 'count': 'Cant. de Delitos'}), hide_index=True, use_container_width=True)
                     
-                    # 2. Top Modalidades y Vehículos
                     df_mod = df[(df['modalidad_final'].notna()) & (df['modalidad_final'] != "") & (df['modalidad_final'] != "-")]
                     df_veh = df[(df['vehiculo_final'].notna()) & (df['vehiculo_final'] != "") & (df['vehiculo_final'] != "-")]
+                    df_arm = df[(df['armamento_final'].notna()) & (df['armamento_final'] != "") & (df['armamento_final'] != "-")]
                     
-                    c_m, c_v = st.columns(2)
+                    c_m, c_v, c_a = st.columns(3)
                     with c_m:
                         if not df_mod.empty:
-                            st.write("🔥 **Top Modalidades**")
+                            st.write("🔥 **Top Modalidad**")
                             st.dataframe(df_mod['modalidad_final'].value_counts().reset_index().rename(columns={'modalidad_final': 'Modalidad', 'count': 'Casos'}), hide_index=True)
                     with c_v:
                         if not df_veh.empty:
                             st.write("🚗 **Top Vehículos**")
                             st.dataframe(df_veh['vehiculo_final'].value_counts().reset_index().rename(columns={'vehiculo_final': 'Vehículo', 'count': 'Casos'}), hide_index=True)
+                    with c_a:
+                        if not df_arm.empty:
+                            st.write("🔫 **Top Armamento**")
+                            st.dataframe(df_arm['armamento_final'].value_counts().reset_index().rename(columns={'armamento_final': 'Armamento', 'count': 'Casos'}), hide_index=True)
 
                 st.markdown("---")
                 st.subheader("Selección de Casos para Fiscalía")
                 
-                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'detalles_final']].copy()
+                df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'detalles_final']].copy()
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
                 
-                for col in ['modalidad_final', 'vehiculo_final', 'patente_final', 'caracteristicas_final', 'detalles_final']:
+                for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'detalles_final']:
                     df_v[col] = df_v[col].fillna("-")
                     
-                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales']
+                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales']
                 df_v.insert(0, "Seleccionar", False)
 
                 edited_df = st.data_editor(
                     df_v, hide_index=True,
                     column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", required=True)},
-                    disabled=['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales'], 
+                    disabled=['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', 'Detalles Generales'], 
                     use_container_width=True
                 )
 
@@ -200,6 +205,9 @@ if client:
                             
                         veh = row.get('Vehículo', "-")
                         if veh != "-": texto_reporte += f"Vehículo Involucrado: {veh}\n"
+                            
+                        arm = row.get('Armamento', "-")
+                        if arm != "-": texto_reporte += f"Armamento Utilizado: {arm}\n"
                             
                         pat = row.get('Patente', "-")
                         if pat != "-": texto_reporte += f"Placa Patente: {pat}\n"
@@ -260,7 +268,7 @@ if client:
                         else: st.success("✅ ¡Ubicación perfecta! 100% de los datos mapeados.")
             else: st.warning("No hay datos para mostrar en el mapa.")
 
-        # PESTAÑA 3: ADMINISTRACIÓN CON NUEVOS CAMPOS
+        # PESTAÑA 3: ADMINISTRACIÓN
         with tab3:
             st.header("Área de Administración")
             clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
@@ -289,9 +297,11 @@ if client:
                         with col_mod: t_mod = st.text_input("Modalidad (Ej: Encerrona, Alunizaje, etc.)")
                         with col_veh: t_veh = st.text_input("Vehículo Involucrado (Ej: Moto roja, Sedán gris)")
                         
-                        col_pat, col_car = st.columns(2)
+                        col_arm, col_pat = st.columns(2)
+                        with col_arm: t_arm = st.text_input("Armamento (Ej: Arma de fuego, Arma blanca)")
                         with col_pat: t_pat = st.text_input("Placa Patente (Si se mantiene)")
-                        with col_car: t_car = st.text_input("Características / Vestimenta de Sujetos")
+                        
+                        t_car = st.text_input("Características / Vestimenta de Sujetos")
                         
                         st.markdown("---")
                         c1, c2, c3 = st.columns(3)
@@ -305,7 +315,7 @@ if client:
                             t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
                             coleccion.insert_one({
                                 "fecha": datetime.combine(fecha_in, datetime.min.time()), "direccion": dir_in, "tipo_delito": t_fin,
-                                "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
+                                "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": datetime.now()
                             })
                             st.success("✅ Guardado correctamente")
@@ -343,9 +353,11 @@ if client:
                             with col_emod: e_mod = st.text_input("Corregir Modalidad", doc.get("modalidad", ""))
                             with col_eveh: e_veh = st.text_input("Corregir Vehículo", doc.get("vehiculo", ""))
                             
-                            col_epat, col_ecar = st.columns(2)
+                            col_earm, col_epat = st.columns(2)
+                            with col_earm: e_arm = st.text_input("Corregir Armamento", doc.get("armamento", ""))
                             with col_epat: e_pat = st.text_input("Corregir Patente", doc.get("patente", ""))
-                            with col_ecar: e_car = st.text_input("Corregir Características", doc.get("caracteristicas", ""))
+                            
+                            e_car = st.text_input("Corregir Características", doc.get("caracteristicas", ""))
                             
                             st.markdown("---")
                             c1, c2, c3 = st.columns(3)
@@ -361,7 +373,7 @@ if client:
                                 if st.button("💾 Actualizar Registro", use_container_width=True):
                                     coleccion.update_one({"_id": doc["_id"]}, {"$set": {
                                         "fecha": datetime.combine(e_fecha, datetime.min.time()), "direccion": e_dir, "tipo_delito": e_del, 
-                                        "modalidad": e_mod.strip(), "vehiculo": e_veh.strip(), "patente": e_pat.strip(), "caracteristicas": e_car.strip(),
+                                        "modalidad": e_mod.strip(), "vehiculo": e_veh.strip(), "armamento": e_arm.strip(), "patente": e_pat.strip(), "caracteristicas": e_car.strip(),
                                         "tiene_imagenes": e_img, "tiene_videos": e_vid, "es_relevante": e_rel, "detalles": e_det
                                     }})
                                     st.success("✅ Registro actualizado.")
