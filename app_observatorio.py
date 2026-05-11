@@ -26,14 +26,25 @@ def iniciar_conexion():
 
 client = iniciar_conexion()
 
-# --- 2. MOTOR DE IA (GEMINI) ---
+# --- 2. MOTOR DE IA (GEMINI) CON AUTO-DETECCIÓN ---
 def consultar_gemini(pregunta, contexto_datos):
     try:
         if "ai" in st.secrets and "gemini_key" in st.secrets["ai"]:
             genai.configure(api_key=st.secrets["ai"]["gemini_key"])
             
-            # CORRECCIÓN: Usamos el modelo universal y estable
-            model = genai.GenerativeModel('gemini-pro')
+            # TRUCO MAESTRO: Buscar automáticamente el modelo disponible para tu llave
+            modelo_disponible = "gemini-1.5-flash" # Respaldo por defecto
+            try:
+                for m in genai.list_models():
+                    if 'generateContent' in m.supported_generation_methods:
+                        if 'flash' in m.name or 'pro' in m.name:
+                            modelo_disponible = m.name
+                            break
+            except Exception as buscar_error:
+                print("No se pudo listar los modelos, usando el de respaldo.")
+            
+            # Usamos el modelo exacto que Google nos autorizó
+            model = genai.GenerativeModel(modelo_disponible)
             
             # Preparamos un resumen de los datos para la IA
             resumen = contexto_datos[['fecha_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'detalles_final']].to_string()
@@ -153,7 +164,7 @@ if client:
         # --- PESTAÑAS ---
         tab_ia, tab1, tab2, tab3 = st.tabs(["🤖 Analista IA", "📊 Analítica y Reportes", "🗺️ Mapa de Delitos", "📝 Área de Administración"])
 
-        # PESTAÑA NUEVA: IA
+        # PESTAÑA IA
         with tab_ia:
             st.header("🤖 Asistente de Inteligencia Delictual")
             st.write("Este asistente lee los últimos 100 registros filtrados en tu tabla y cruza la información por ti.")
@@ -163,7 +174,6 @@ if client:
             if st.button("Consultar Analista", type="primary"):
                 if pregunta:
                     with st.spinner("Analizando base de datos y buscando patrones..."):
-                        # Le pasamos a la IA los datos filtrados (máximo 100 para no saturarla)
                         datos_para_ia = df.head(100)
                         respuesta = consultar_gemini(pregunta, datos_para_ia)
                         st.markdown("### 📋 Respuesta del Análisis:")
