@@ -32,8 +32,7 @@ def consultar_gemini(pregunta, contexto_datos):
         if "ai" in st.secrets and "gemini_key" in st.secrets["ai"]:
             genai.configure(api_key=st.secrets["ai"]["gemini_key"])
             
-            # TRUCO MAESTRO: Buscar automáticamente el modelo disponible para tu llave
-            modelo_disponible = "gemini-1.5-flash" # Respaldo por defecto
+            modelo_disponible = "gemini-1.5-flash" 
             try:
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
@@ -43,10 +42,8 @@ def consultar_gemini(pregunta, contexto_datos):
             except Exception as buscar_error:
                 print("No se pudo listar los modelos, usando el de respaldo.")
             
-            # Usamos el modelo exacto que Google nos autorizó
             model = genai.GenerativeModel(modelo_disponible)
             
-            # Preparamos un resumen de los datos para la IA
             resumen = contexto_datos[['fecha_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'detalles_final']].to_string()
             
             prompt = f"""
@@ -115,9 +112,14 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # Fechas
+        # REGLA DE ORO ACTUALIZADA (AHORA RESPETA LA HORA)
         def arreglar_fecha_absoluta(val):
             if pd.isna(val): return pd.NaT
+            
+            # SI EL DATO YA ES UNA FECHA/HORA REAL DE MONGODB, LO DEJA INTACTO:
+            if isinstance(val, datetime): 
+                return val
+                
             s = str(val).split(' ')[0].replace('/', '-')
             try:
                 parts = s.split('-')
@@ -221,6 +223,8 @@ if client:
                 st.subheader("Selección de Casos para Fiscalía")
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
+                
+                # APLICAMOS EL FORMATO DE FECHA CON LA HORA RECUPERADA
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y %H:%M')
                 
                 for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
