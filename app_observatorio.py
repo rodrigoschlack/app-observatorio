@@ -31,7 +31,9 @@ def consultar_gemini(pregunta, contexto_datos):
     try:
         if "ai" in st.secrets and "gemini_key" in st.secrets["ai"]:
             genai.configure(api_key=st.secrets["ai"]["gemini_key"])
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # CORRECCIÓN: Usamos el modelo universal y estable
+            model = genai.GenerativeModel('gemini-pro')
             
             # Preparamos un resumen de los datos para la IA
             resumen = contexto_datos[['fecha_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'detalles_final']].to_string()
