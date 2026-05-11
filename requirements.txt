@@ -5,3 +5,4 @@ dnspython
 plotly
 openpyxl
 geopy
+google-generativeai
