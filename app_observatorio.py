@@ -1,20 +1,19 @@
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, time as datetime_time
 import plotly.express as px
 from bson.objectid import ObjectId
 from geopy.geocoders import ArcGIS
 import time
 import google.generativeai as genai
-import pytz # NUEVA LIBRERÍA DE ZONAS HORARIAS
+import pytz
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
 
 # --- FUNCIÓN DE HORA CHILENA ---
 def obtener_hora_chile():
-    # Obligamos al servidor a usar la hora de Santiago
     tz = pytz.timezone('America/Santiago')
     return datetime.now(tz).replace(tzinfo=None)
 
@@ -119,13 +118,24 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # REGLA DE FECHAS MEJORADA Y BLINDADA
-        def limpiar_fecha_completa(val):
+        # REGLA DE ORO RESTAURADA (Respeta la hora y lee bien las fechas antiguas)
+        def arreglar_fecha_absoluta(val):
             if pd.isna(val) or val is None: return pd.NaT
-            if isinstance(val, datetime): return val
-            return pd.to_datetime(val, dayfirst=True, errors='coerce')
+            if isinstance(val, datetime): return val # Respeta la hora exacta de registros nuevos
+            
+            # Para los registros antiguos sin hora
+            s = str(val).split(' ')[0].replace('/', '-')
+            try:
+                parts = s.split('-')
+                if len(parts) == 3:
+                    p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
+                    if p1 > 2000: return datetime(p1, p2, p3)
+                    if p1 <= 12: return datetime(p3, p1, p2)
+                    else: return datetime(p3, p2, p1)
+            except: pass
+            return pd.to_datetime(val, errors='coerce')
 
-        df['fecha_final'] = df['fecha_final'].apply(limpiar_fecha_completa)
+        df['fecha_final'] = df['fecha_final'].apply(arreglar_fecha_absoluta)
         df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
         df['_id_str'] = df['_id'].astype(str)
         df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
@@ -218,7 +228,6 @@ if client:
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
                 
-                # SE RESPETA EL FORMATO DE FECHA Y HORA PERFECTAMENTE
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y %H:%M')
                 
                 for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
@@ -321,8 +330,6 @@ if client:
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
-                        
-                        # AQUI USAMOS LA HORA DE CHILE
                         with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
                         with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
@@ -373,7 +380,6 @@ if client:
                         if seleccion != "Seleccione...":
                             doc = opciones_dict[seleccion]
                             
-                            # LECTURA DE FECHA Y HORA DE CHILE SEGURA
                             fecha_cruda = doc.get("fecha", doc.get("Fecha"))
                             if isinstance(fecha_cruda, datetime):
                                 fecha_pre = fecha_cruda
