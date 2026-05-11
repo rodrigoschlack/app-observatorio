@@ -112,13 +112,9 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # REGLA DE ORO ACTUALIZADA (AHORA RESPETA LA HORA)
         def arreglar_fecha_absoluta(val):
             if pd.isna(val): return pd.NaT
-            
-            # SI EL DATO YA ES UNA FECHA/HORA REAL DE MONGODB, LO DEJA INTACTO:
-            if isinstance(val, datetime): 
-                return val
+            if isinstance(val, datetime): return val
                 
             s = str(val).split(' ')[0].replace('/', '-')
             try:
@@ -170,9 +166,7 @@ if client:
         with tab_ia:
             st.header("🤖 Asistente de Inteligencia Delictual")
             st.write("Este asistente lee los últimos 100 registros filtrados en tu tabla y cruza la información por ti.")
-            
             pregunta = st.text_input("Hazle una pregunta a la IA:", placeholder="Ej: ¿Cuáles son los vehículos más usados para RCI este mes?")
-            
             if st.button("Consultar Analista", type="primary"):
                 if pregunta:
                     with st.spinner("Analizando base de datos y buscando patrones..."):
@@ -187,7 +181,6 @@ if client:
         with tab1:
             if not df.empty:
                 col_graf, col_intel = st.columns([1, 1.5])
-                
                 with col_graf:
                     st.subheader("Estadísticas del periodo")
                     cnt = df['delito_final'].value_counts().reset_index()
@@ -198,7 +191,6 @@ if client:
 
                 with col_intel:
                     st.subheader("🕵️‍♂️ Panel Rápido")
-                    
                     df_pat = df[(df['patente_final'].notna()) & (df['patente_final'] != "") & (df['patente_final'] != "-")]
                     if not df_pat.empty:
                         conteo_pat = df_pat['patente_final'].value_counts()
@@ -223,8 +215,6 @@ if client:
                 st.subheader("Selección de Casos para Fiscalía")
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
-                
-                # APLICAMOS EL FORMATO DE FECHA CON LA HORA RECUPERADA
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y %H:%M')
                 
                 for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
@@ -373,9 +363,20 @@ if client:
                             opciones_dict[label] = r
                             
                         seleccion = st.selectbox("🔍 Buscar registro a editar:", ["Seleccione..."] + list(opciones_dict.keys()))
+                        
                         if seleccion != "Seleccione...":
                             doc = opciones_dict[seleccion]
-                            fecha_pre = doc.get("fecha", datetime.now()) if isinstance(doc.get("fecha"), datetime) else datetime.now()
+                            
+                            # NUEVA LÓGICA DE RESCATE DE FECHA Y HORA
+                            fecha_cruda = doc.get("fecha", doc.get("Fecha"))
+                            if isinstance(fecha_cruda, datetime):
+                                fecha_pre = fecha_cruda
+                            else:
+                                try:
+                                    fecha_pre = pd.to_datetime(fecha_cruda)
+                                except:
+                                    # Si es muy antigua o está fallada, pone 00:00 estático en vez de la hora actual
+                                    fecha_pre = datetime.now().replace(hour=0, minute=0, second=0)
                             
                             c_efec, c_ehor = st.columns(2)
                             with c_efec: e_fecha = st.date_input("Corregir Fecha", fecha_pre.date())
