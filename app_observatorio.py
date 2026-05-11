@@ -1,15 +1,22 @@
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
-from datetime import datetime, time as datetime_time
+from datetime import datetime
 import plotly.express as px
 from bson.objectid import ObjectId
 from geopy.geocoders import ArcGIS
 import time
 import google.generativeai as genai
+import pytz # NUEVA LIBRERÍA DE ZONAS HORARIAS
 
 # Configuración de la página
 st.set_page_config(page_title="Observatorio La Florida", layout="wide", page_icon="🛡️")
+
+# --- FUNCIÓN DE HORA CHILENA ---
+def obtener_hora_chile():
+    # Obligamos al servidor a usar la hora de Santiago
+    tz = pytz.timezone('America/Santiago')
+    return datetime.now(tz).replace(tzinfo=None)
 
 # --- 1. CONEXIÓN A LA BASE DE DATOS ---
 @st.cache_resource
@@ -112,23 +119,11 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # NUEVA REGLA DE FECHAS: BLINDADA PARA NO BORRAR LA HORA
+        # REGLA DE FECHAS MEJORADA Y BLINDADA
         def limpiar_fecha_completa(val):
             if pd.isna(val) or val is None: return pd.NaT
-            # Si el dato ya es una fecha y hora exacta (datetime), no lo tocamos
             if isinstance(val, datetime): return val
-            
-            # Si es texto antiguo, intentamos convertirlo
-            try:
-                s = str(val).split(' ')[0].replace('/', '-')
-                parts = s.split('-')
-                if len(parts) == 3:
-                    p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
-                    if p1 > 2000: return datetime(p1, p2, p3)
-                    if p1 <= 12: return datetime(p3, p1, p2)
-                    else: return datetime(p3, p2, p1)
-            except: pass
-            return pd.to_datetime(val, errors='coerce')
+            return pd.to_datetime(val, dayfirst=True, errors='coerce')
 
         df['fecha_final'] = df['fecha_final'].apply(limpiar_fecha_completa)
         df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
@@ -223,7 +218,7 @@ if client:
                 
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
                 
-                # SE RESPETA EL FORMATO DE FECHA Y HORA
+                # SE RESPETA EL FORMATO DE FECHA Y HORA PERFECTAMENTE
                 df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y %H:%M')
                 
                 for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
@@ -276,7 +271,7 @@ if client:
                         contador += 1
                         
                     texto_reporte += "Isabel Romero\nRodrigo Schlack\nDepartamento de televigilancia y comunicación radial."
-                    st.download_button("📄 Descargar Reporte (TXT)", data=texto_reporte, file_name=f"Reporte_Fiscalia_{datetime.now().strftime('%d%m%Y')}.txt", mime="text/plain")
+                    st.download_button("📄 Descargar Reporte (TXT)", data=texto_reporte, file_name=f"Reporte_Fiscalia_{obtener_hora_chile().strftime('%d%m%Y')}.txt", mime="text/plain")
 
         # PESTAÑA 2: EL MAPA DE CALOR
         with tab2:
@@ -326,8 +321,10 @@ if client:
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
-                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", datetime.now().date())
-                        with c_hor: hora_in = st.time_input("Hora del Suceso", datetime.now().time())
+                        
+                        # AQUI USAMOS LA HORA DE CHILE
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
@@ -356,7 +353,7 @@ if client:
                             coleccion.insert_one({
                                 "fecha": datetime.combine(fecha_in, hora_in), "direccion": dir_in, "tipo_delito": t_fin,
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
-                                "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": datetime.now()
+                                "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
                             st.success("✅ Guardado correctamente")
                             st.rerun()
@@ -376,7 +373,7 @@ if client:
                         if seleccion != "Seleccione...":
                             doc = opciones_dict[seleccion]
                             
-                            # LÓGICA BLINDADA DE LECTURA DE FECHA Y HORA
+                            # LECTURA DE FECHA Y HORA DE CHILE SEGURA
                             fecha_cruda = doc.get("fecha", doc.get("Fecha"))
                             if isinstance(fecha_cruda, datetime):
                                 fecha_pre = fecha_cruda
@@ -384,8 +381,7 @@ if client:
                                 try:
                                     fecha_pre = pd.to_datetime(fecha_cruda)
                                 except:
-                                    # Por seguridad, ante fallo pone hora 00:00 y no la actual
-                                    fecha_pre = datetime.now().replace(hour=0, minute=0, second=0)
+                                    fecha_pre = obtener_hora_chile().replace(hour=0, minute=0, second=0)
                             
                             c_efec, c_ehor = st.columns(2)
                             with c_efec: e_fecha = st.date_input("Corregir Fecha", fecha_pre.date())
