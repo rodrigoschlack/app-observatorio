@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, time as datetime_time
 import plotly.express as px
 from bson.objectid import ObjectId
 from geopy.geocoders import ArcGIS
@@ -58,7 +58,7 @@ if client:
             'delito_final': ['tipo_delito', 'Tipo de delito', 'Delito'],
             'img_final': ['tiene_imagenes', 'Imágenes', 'Imagenes'],
             'vid_final': ['tiene_videos', 'Videos', 'Video'],
-            'relevante_final': ['es_relevante', 'Relevante'], # <-- Agregamos Relevante al mapeo
+            'relevante_final': ['es_relevante', 'Relevante'], 
             'detalles_final': ['detalles', 'Detalles'],
             'modalidad_final': ['modalidad', 'Modalidad'],
             'vehiculo_final': ['vehiculo', 'Vehículo'],
@@ -91,7 +91,6 @@ if client:
         df['_id_str'] = df['_id'].astype(str)
         df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
 
-        # Formateamos las 3 casillas booleanas para que se vean bonitas
         for col in ['img_final', 'vid_final', 'relevante_final']:
             df[col] = df[col].apply(lambda x: "✅ Sí" if str(x).lower() in ['true', 'si', '1.0', '1'] else "❌ No")
 
@@ -169,20 +168,21 @@ if client:
                 st.markdown("---")
                 st.subheader("Selección de Casos para Fiscalía")
                 
-                # ACTUALIZADO: Sacamos detalles y pusimos relevante
                 df_v = df[['fecha_final', 'direccion_final', 'delito_final', 'modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final', 'img_final', 'vid_final', 'relevante_final']].copy()
-                df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y')
+                
+                # NUEVO FORMATO DE FECHA Y HORA
+                df_v['fecha_final'] = df_v['fecha_final'].dt.strftime('%d-%m-%Y %H:%M')
                 
                 for col in ['modalidad_final', 'vehiculo_final', 'armamento_final', 'patente_final', 'caracteristicas_final']:
                     df_v[col] = df_v[col].fillna("-")
                     
-                df_v.columns = ['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?']
+                df_v.columns = ['Fecha y Hora', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?']
                 df_v.insert(0, "Seleccionar", False)
 
                 edited_df = st.data_editor(
                     df_v, hide_index=True,
                     column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", required=True)},
-                    disabled=['Fecha', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?'], 
+                    disabled=['Fecha y Hora', 'Dirección', 'Tipo de Delito', 'Modalidad', 'Vehículo', 'Armamento', 'Patente', 'Características Sujetos', '¿Imágenes?', '¿Videos?', '¿Relevante?'], 
                     use_container_width=True
                 )
 
@@ -194,13 +194,22 @@ if client:
                     contador = 1
                     for index, row in seleccionados.iterrows():
                         texto_reporte += f"{contador}- {row['Dirección']}, La Florida.\n"
-                        partes_fecha = str(row['Fecha']).split('-')
+                        
+                        # Extraemos fecha y hora del nuevo formato
+                        partes_fecha_hora = str(row['Fecha y Hora']).split(' ')
+                        partes_fecha = partes_fecha_hora[0].split('-')
+                        
                         if len(partes_fecha) == 3:
                             fecha_formateada = f"{partes_fecha[0]} de {meses_es.get(partes_fecha[1], partes_fecha[1])} del {partes_fecha[2]}"
-                        else: fecha_formateada = row['Fecha']
+                        else: 
+                            fecha_formateada = partes_fecha_hora[0]
 
                         texto_reporte += f"Fecha: {fecha_formateada}.\n"
-                        texto_reporte += f"Hora: [EDITAR HORA] (como referencia)\n"
+                        
+                        # AHORA LA HORA ES AUTOMÁTICA
+                        hora_formateada = partes_fecha_hora[1] if len(partes_fecha_hora) > 1 else "Sin registro"
+                        texto_reporte += f"Hora: {hora_formateada} hrs.\n"
+                        
                         texto_reporte += f"Delito: {row['Tipo de Delito']}.\n"
                         
                         mod = row.get('Modalidad', "-")
@@ -220,7 +229,6 @@ if client:
 
                         obs = "En el lugar no fue posible realizar el levantamiento de material audiovisual." if row['¿Imágenes?'] == "❌ No" and row['¿Videos?'] == "❌ No" else "Se logró levantamiento de material audiovisual en el lugar."
                         
-                        # Rescatamos los detalles de la base de datos de fondo por si escribiste algo
                         det_gen = df.loc[index, 'detalles_final'] if 'detalles_final' in df.columns else "-"
                         if pd.notna(det_gen) and str(det_gen).strip() != "" and str(det_gen) != "-": obs += f" {det_gen}"
                         
@@ -290,9 +298,12 @@ if client:
                 with admin_tab1:
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
-                        col1, col2 = st.columns(2)
-                        with col1: fecha_in = st.date_input("Fecha del Suceso", datetime.now())
-                        with col2: dir_in = st.text_input("Dirección / Ubicación")
+                        
+                        # NUEVO: AHORA PEDIMOS LA HORA TAMBIÉN
+                        c_fec, c_hor, c_dir = st.columns([1, 1, 2])
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", datetime.now().date())
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", datetime.now().time())
+                        with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
                         t_otro = st.text_input("Si eligió 'Otros', escriba el tipo de procedimiento aquí:")
@@ -319,8 +330,12 @@ if client:
                         
                         if st.form_submit_button("Guardar Registro"):
                             t_fin = t_otro.strip() if t_sel == "Otros" and t_otro else t_sel
+                            
+                            # Fusionamos fecha y hora para guardarlo en la base de datos
+                            fecha_completa = datetime.combine(fecha_in, hora_in)
+                            
                             coleccion.insert_one({
-                                "fecha": datetime.combine(fecha_in, datetime.min.time()), "direccion": dir_in, "tipo_delito": t_fin,
+                                "fecha": fecha_completa, "direccion": dir_in, "tipo_delito": t_fin,
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": datetime.now()
                             })
@@ -334,7 +349,7 @@ if client:
                     if ultimos:
                         opciones_dict = {}
                         for r in ultimos:
-                            f_str = r["fecha"].strftime('%d-%m-%Y') if "fecha" in r and isinstance(r["fecha"], datetime) else str(r.get("Fecha", "Fecha desc.")).split(" ")[0]
+                            f_str = r["fecha"].strftime('%d-%m-%Y %H:%M') if "fecha" in r and isinstance(r["fecha"], datetime) else str(r.get("Fecha", "Fecha desc."))
                             label = f"{f_str} | {r.get('direccion', 'Sin Dir.')} | {r.get('tipo_delito', 'S/D')}"
                             opciones_dict[label] = r
                             
@@ -344,8 +359,13 @@ if client:
                             doc = opciones_dict[seleccion]
                             st.markdown("---")
                             
+                            fecha_pre = doc.get("fecha", datetime.now()) if isinstance(doc.get("fecha"), datetime) else datetime.now()
+                            
                             st.write("📍 **Corregir Datos Principales**")
-                            e_fecha = st.date_input("Corregir Fecha", doc.get("fecha", datetime.now()) if isinstance(doc.get("fecha"), datetime) else datetime.now())
+                            c_efec, c_ehor = st.columns(2)
+                            with c_efec: e_fecha = st.date_input("Corregir Fecha", fecha_pre.date())
+                            with c_ehor: e_hora = st.time_input("Corregir Hora", fecha_pre.time())
+                            
                             e_dir = st.text_input("Corregir Dirección", doc.get("direccion", doc.get("Dirección", "")))
                             
                             ops_edit = opciones.copy()
@@ -377,8 +397,9 @@ if client:
                             col_btn1, col_btn2 = st.columns(2)
                             with col_btn1:
                                 if st.button("💾 Actualizar Registro", use_container_width=True):
+                                    fecha_completa_e = datetime.combine(e_fecha, e_hora)
                                     coleccion.update_one({"_id": doc["_id"]}, {"$set": {
-                                        "fecha": datetime.combine(e_fecha, datetime.min.time()), "direccion": e_dir, "tipo_delito": e_del, 
+                                        "fecha": fecha_completa_e, "direccion": e_dir, "tipo_delito": e_del, 
                                         "modalidad": e_mod.strip(), "vehiculo": e_veh.strip(), "armamento": e_arm.strip(), "patente": e_pat.strip(), "caracteristicas": e_car.strip(),
                                         "tiene_imagenes": e_img, "tiene_videos": e_vid, "es_relevante": e_rel, "detalles": e_det
                                     }})
