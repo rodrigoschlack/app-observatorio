@@ -321,13 +321,19 @@ if client:
                 admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
 
                 with admin_tab1:
-                    # ACÁ APAGAMOS EL LIMPIADO AUTOMÁTICO (clear_on_submit=False)
-                    with st.form("formulario_registro", clear_on_submit=False):
+                    # LÓGICA DE MEMORIA AISLADA: Esto impide que el reloj pise tu teclado
+                    if "def_fecha" not in st.session_state:
+                        st.session_state.def_fecha = obtener_hora_chile().date()
+                    if "def_hora" not in st.session_state:
+                        st.session_state.def_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
+
+                    with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
                         
-                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
-                        with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
+                        # Usamos "value" conectado a la memoria estática, NO al reloj en vivo
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", value=st.session_state.def_fecha)
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", value=st.session_state.def_hora)
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
@@ -358,9 +364,12 @@ if client:
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
-                            st.success("✅ ¡Procedimiento guardado con la hora EXACTA que tú le ingresaste!")
-                            time.sleep(1.5)
-                            st.rerun()
+                            
+                            # Actualizamos la memoria oculta para el PRÓXIMO caso
+                            st.session_state.def_fecha = obtener_hora_chile().date()
+                            st.session_state.def_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
+                            
+                            st.success("✅ ¡Guardado! La hora exacta fue registrada.")
 
                 with admin_tab2:
                     st.write("Selecciona un registro reciente para modificarlo o eliminarlo de la base de datos.")
