@@ -321,11 +321,11 @@ if client:
                 admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
 
                 with admin_tab1:
-                    with st.form("formulario_registro", clear_on_submit=True):
+                    # ACÁ APAGAMOS EL LIMPIADO AUTOMÁTICO (clear_on_submit=False)
+                    with st.form("formulario_registro", clear_on_submit=False):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
                         
-                        # VUELVE EL FORMULARIO ESTÁNDAR PERO INICIANDO EN HORA DE CHILE
                         with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
                         with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
@@ -358,7 +358,8 @@ if client:
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
-                            st.success("✅ Guardado correctamente")
+                            st.success("✅ ¡Procedimiento guardado con la hora EXACTA que tú le ingresaste!")
+                            time.sleep(1.5)
                             st.rerun()
 
                 with admin_tab2:
