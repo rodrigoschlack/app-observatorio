@@ -321,19 +321,20 @@ if client:
                 admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
 
                 with admin_tab1:
-                    # LÓGICA DE MEMORIA AISLADA: Esto impide que el reloj pise tu teclado
-                    if "def_fecha" not in st.session_state:
-                        st.session_state.def_fecha = obtener_hora_chile().date()
-                    if "def_hora" not in st.session_state:
-                        st.session_state.def_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
+                    # LÓGICA BLINDADA: Declaramos la hora por defecto UNA sola vez, y la guardamos
+                    # en variables estáticas para que Streamlit no las sobreescriba en el click.
+                    if "fija_fecha" not in st.session_state:
+                        st.session_state.fija_fecha = obtener_hora_chile().date()
+                    if "fija_hora" not in st.session_state:
+                        st.session_state.fija_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
 
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
                         
-                        # Usamos "value" conectado a la memoria estática, NO al reloj en vivo
-                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", value=st.session_state.def_fecha)
-                        with c_hor: hora_in = st.time_input("Hora del Suceso", value=st.session_state.def_hora)
+                        # Usamos las variables estáticas aquí
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", value=st.session_state.fija_fecha)
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", value=st.session_state.fija_hora)
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
@@ -365,11 +366,14 @@ if client:
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
                             
-                            # Actualizamos la memoria oculta para el PRÓXIMO caso
-                            st.session_state.def_fecha = obtener_hora_chile().date()
-                            st.session_state.def_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
+                            # Tras guardar exitosamente, actualizamos la memoria estática
+                            # para que el formulario se prepare limpio para tu próximo procedimiento.
+                            st.session_state.fija_fecha = obtener_hora_chile().date()
+                            st.session_state.fija_hora = obtener_hora_chile().replace(second=0, microsecond=0).time()
                             
-                            st.success("✅ ¡Guardado! La hora exacta fue registrada.")
+                            st.success("✅ ¡Registro Guardado con éxito! Se respetó la hora ingresada.")
+                            time.sleep(1.5)
+                            st.rerun()
 
                 with admin_tab2:
                     st.write("Selecciona un registro reciente para modificarlo o eliminarlo de la base de datos.")
@@ -397,8 +401,8 @@ if client:
                                     fecha_pre = obtener_hora_chile().replace(hour=0, minute=0, second=0)
                             
                             c_efec, c_ehor = st.columns(2)
-                            with c_efec: e_fecha = st.date_input("Corregir Fecha", fecha_pre.date())
-                            with c_ehor: e_hora = st.time_input("Corregir Hora", fecha_pre.time())
+                            with c_efec: e_fecha = st.date_input("Corregir Fecha", value=fecha_pre.date())
+                            with c_ehor: e_hora = st.time_input("Corregir Hora", value=fecha_pre.time())
                             
                             e_dir = st.text_input("Corregir Dirección", doc.get("direccion", ""))
                             
