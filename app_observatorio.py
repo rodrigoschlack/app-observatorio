@@ -118,14 +118,12 @@ if client:
                 if orig in df.columns:
                     df[final] = df[final].fillna(df[orig])
 
-        # REGLA DE ORO RESTAURADA (Respeta la hora y lee bien las fechas antiguas)
-        def arreglar_fecha_absoluta(val):
+        def limpiar_fecha_completa(val):
             if pd.isna(val) or val is None: return pd.NaT
-            if isinstance(val, datetime): return val # Respeta la hora exacta de registros nuevos
+            if isinstance(val, datetime): return val
             
-            # Para los registros antiguos sin hora
-            s = str(val).split(' ')[0].replace('/', '-')
             try:
+                s = str(val).split(' ')[0].replace('/', '-')
                 parts = s.split('-')
                 if len(parts) == 3:
                     p1, p2, p3 = int(parts[0]), int(parts[1]), int(parts[2])
@@ -135,7 +133,7 @@ if client:
             except: pass
             return pd.to_datetime(val, errors='coerce')
 
-        df['fecha_final'] = df['fecha_final'].apply(arreglar_fecha_absoluta)
+        df['fecha_final'] = df['fecha_final'].apply(limpiar_fecha_completa)
         df = df.dropna(subset=['direccion_final', 'delito_final'], how='all')
         df['_id_str'] = df['_id'].astype(str)
         df = df.sort_values(by=['fecha_final', '_id_str'], ascending=[False, False])
@@ -170,7 +168,6 @@ if client:
         # --- PESTAÑAS ---
         tab_ia, tab1, tab2, tab3 = st.tabs(["🤖 Analista IA", "📊 Analítica y Reportes", "🗺️ Mapa de Delitos", "📝 Área de Administración"])
 
-        # PESTAÑA IA
         with tab_ia:
             st.header("🤖 Asistente de Inteligencia Delictual")
             st.write("Este asistente lee los últimos 100 registros filtrados en tu tabla y cruza la información por ti.")
@@ -187,7 +184,6 @@ if client:
                 else:
                     st.warning("Debes escribir una pregunta primero.")
 
-        # PESTAÑA 1: ANALÍTICA
         with tab1:
             if not df.empty:
                 col_graf, col_intel = st.columns([1, 1.5])
@@ -282,7 +278,6 @@ if client:
                     texto_reporte += "Isabel Romero\nRodrigo Schlack\nDepartamento de televigilancia y comunicación radial."
                     st.download_button("📄 Descargar Reporte (TXT)", data=texto_reporte, file_name=f"Reporte_Fiscalia_{obtener_hora_chile().strftime('%d%m%Y')}.txt", mime="text/plain")
 
-        # PESTAÑA 2: EL MAPA DE CALOR
         with tab2:
             st.header("🔥 Zona de Calor de Delitos")
             if not df.empty:
@@ -313,7 +308,6 @@ if client:
                         st.plotly_chart(fig_mapa, use_container_width=True)
             else: st.warning("No hay datos.")
 
-        # PESTAÑA 3: ADMINISTRACIÓN
         with tab3:
             st.header("Área de Administración")
             clave_ingresada = st.text_input("🔑 Ingrese la clave de administrador:", type="password")
@@ -327,11 +321,19 @@ if client:
                 admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
 
                 with admin_tab1:
+                    # CANDADO DE MEMORIA PARA LA HORA EXACTA
+                    if "f_nueva" not in st.session_state:
+                        st.session_state["f_nueva"] = obtener_hora_chile().date()
+                    if "h_nueva" not in st.session_state:
+                        st.session_state["h_nueva"] = obtener_hora_chile().replace(second=0, microsecond=0).time()
+
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
-                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
-                        with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
+                        
+                        # USAMOS EL CANDADO (key) EN LUGAR DE RECALCULAR
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", key="f_nueva")
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", key="h_nueva")
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
@@ -362,12 +364,18 @@ if client:
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
+                            
+                            # Actualizamos el candado para que el próximo registro parta en blanco con la hora actual
+                            st.session_state["f_nueva"] = obtener_hora_chile().date()
+                            st.session_state["h_nueva"] = obtener_hora_chile().replace(second=0, microsecond=0).time()
+                            
                             st.success("✅ Guardado correctamente")
                             st.rerun()
 
                 with admin_tab2:
                     st.write("Selecciona un registro reciente para modificarlo o eliminarlo de la base de datos.")
-                    ultimos = list(coleccion.find().sort("_id", -1).limit(100))
+                    ultimos = list(coleccion.find().sort([("fecha", -1), ("_id", -1)]).limit(100))
+                    
                     if ultimos:
                         opciones_dict = {}
                         for r in ultimos:
