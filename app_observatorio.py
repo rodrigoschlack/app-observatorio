@@ -321,19 +321,13 @@ if client:
                 admin_tab1, admin_tab2 = st.tabs(["➕ Ingresar Nuevo", "✏️ Editar o Borrar Registro"])
 
                 with admin_tab1:
-                    # CANDADO DE MEMORIA PARA LA HORA EXACTA
-                    if "f_nueva" not in st.session_state:
-                        st.session_state["f_nueva"] = obtener_hora_chile().date()
-                    if "h_nueva" not in st.session_state:
-                        st.session_state["h_nueva"] = obtener_hora_chile().replace(second=0, microsecond=0).time()
-
                     with st.form("formulario_registro", clear_on_submit=True):
                         st.write("📍 **Datos Principales del Suceso**")
                         c_fec, c_hor, c_dir = st.columns([1, 1, 2])
                         
-                        # USAMOS EL CANDADO (key) EN LUGAR DE RECALCULAR
-                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", key="f_nueva")
-                        with c_hor: hora_in = st.time_input("Hora del Suceso", key="h_nueva")
+                        # VUELVE EL FORMULARIO ESTÁNDAR PERO INICIANDO EN HORA DE CHILE
+                        with c_fec: fecha_in = st.date_input("Fecha del Suceso", obtener_hora_chile().date())
+                        with c_hor: hora_in = st.time_input("Hora del Suceso", obtener_hora_chile().time())
                         with c_dir: dir_in = st.text_input("Dirección / Ubicación")
                         
                         t_sel = st.selectbox("Tipo de Delito", opciones)
@@ -364,11 +358,6 @@ if client:
                                 "modalidad": t_mod.strip(), "vehiculo": t_veh.strip(), "armamento": t_arm.strip(), "patente": t_pat.strip(), "caracteristicas": t_car.strip(),
                                 "tiene_imagenes": tiene_img, "tiene_videos": tiene_vid, "es_relevante": es_rel, "detalles": det, "fecha_registro": obtener_hora_chile()
                             })
-                            
-                            # Actualizamos el candado para que el próximo registro parta en blanco con la hora actual
-                            st.session_state["f_nueva"] = obtener_hora_chile().date()
-                            st.session_state["h_nueva"] = obtener_hora_chile().replace(second=0, microsecond=0).time()
-                            
                             st.success("✅ Guardado correctamente")
                             st.rerun()
 
